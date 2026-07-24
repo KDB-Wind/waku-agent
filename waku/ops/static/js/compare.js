@@ -257,18 +257,27 @@ function cutoffTag(cutoff){
   return cutoff ? ` <span class="meta" style="font-size:11px;white-space:nowrap"
     title="knowledge cutoff — this model's world knowledge ends here; it cannot know releases after this date">knows to ${esc(cutoff)}</span>` : "";
 }
-// The sub-agent's mini-terminal: pi working live inside this card. Last few
-// lines only — it's a window, not a log (the full stream is saved next to the
-// workspace as pi-transcript-events.jsonl).
-function subPane(sub, live){
-  const tail = (sub.text||"").split("\n").filter(Boolean).slice(-6).map(esc).join("\n");
-  const toolChips = (sub.tools||[]).slice(-8).map(t => `<span class="badge">pi · ${esc(t)}</span>`).join(" ");
-  const spend = sub.tokens_in ? `<span class="meta" style="font-size:11px">${sub.tokens_in}↑ ${sub.tokens_out}↓ tokens (on this card's ledger)</span>` : "";
-  return `<div class="subterm${live?" live":""}">
-    <div class="meta" style="font-size:11px;margin-bottom:3px">sub-agent · pi ${spend}</div>
-    ${toolChips?`<div class="stages" style="flex-wrap:wrap;margin-bottom:4px">${toolChips}</div>`:""}
-    ${tail?`<pre>${tail}</pre>`:`<pre class="meta">spawning…</pre>`}
-  </div>`;
+// The sub-agent's receipt: pi working inside this card. Live = a small
+// terminal window (last lines, cleaned of markdown fences). Finished = one
+// quiet summary row that expands on click — the reply below already shows the
+// final code, so the pane must not repeat it. Full stream: pi-transcript-events.jsonl.
+function subPane(sub, live, spec){
+  const seq = [];   // collapse repeats: write, bash, bash -> write · bash ×2
+  for (const t of sub.tools||[]){
+    const last = seq[seq.length-1];
+    if (last && last.t === t) last.n++; else seq.push({t, n:1});
+  }
+  const toolStr = seq.map(x => x.n>1 ? `${x.t} ×${x.n}` : x.t).join(" · ");
+  const tok = sub.tokens_in ? `${(sub.tokens_in/1000).toFixed(1)}k tok` : "";
+  const clean = (sub.text||"").replace(/```[a-zA-Z]*\n?/g, "").trim();
+  const tail = clean.split("\n").filter(Boolean).slice(-4).map(esc).join("\n");
+  const head = `<span class="mm-prov">pi</span><span class="subterm-t">${esc(toolStr)||"…"}</span>` +
+    (tok ? `<span class="meta" title="the sub-agent's tokens — billed to this card's cost">${tok}</span>` : "");
+  if (live) return `<div class="subterm live"><div class="subterm-h">${head}<span class="live-dot"></span></div><pre>${tail||"spawning…"}</pre></div>`;
+  // remember open/closed across re-renders — render() rebuilds the DOM every
+  // refresh tick, which would otherwise snap an expanded pane shut mid-read
+  return `<details class="subterm"${sub.open?" open":""} ontoggle="const r=compareState.results['${esc(spec)}']; if(r&&r.sub) r.sub.open=this.open">
+    <summary class="subterm-h">${head}</summary><pre>${tail}</pre></details>`;
 }
 function compareCol(res){
   if (res.error){
@@ -308,7 +317,7 @@ function compareCol(res){
       <span class="chip ${compareState.sortBy==="tokens"?"sorted":""}">${(res.tokens_in||0)+(res.tokens_out||0)} tok</span>
     </div>
     ${tools?`<div class="stages" style="flex-wrap:wrap">${tools}</div>`:""}
-    ${res.sub?subPane(res.sub, false):""}
+    ${res.sub?subPane(res.sub, false, res.spec):""}
     <div class="r cmp-reply">${renderMarkdown(res.reply||"")}</div>
   </div>`;
 }
