@@ -279,6 +279,18 @@ function subPane(sub, live, spec){
   return `<details class="subterm"${sub.open?" open":""} ontoggle="const r=compareState.results['${esc(spec)}']; if(r&&r.sub) r.sub.open=this.open">
     <summary class="subterm-h">${head}</summary><pre>${tail}</pre></details>`;
 }
+// Long replies are the cards' vertical hog (a coding answer pastes whole
+// programs). Clamp past a threshold with a fade + toggle; open state lives on
+// the card's state so the refresh tick doesn't snap it shut.
+function replyBlock(res){
+  const r = res.reply||"";
+  // height comes from LINES, not characters — 20 short code lines are taller
+  // than a 400-char paragraph
+  const long = r.length > 400 || (r.match(/\n/g)||[]).length > 8;
+  if (!long) return `<div class="r cmp-reply">${renderMarkdown(res.reply||"")}</div>`;
+  return `<div class="r cmp-reply ${res.replyOpen?"":"clamped"}">${renderMarkdown(res.reply||"")}</div>
+    <a class="reveal cmp-more" onclick="const r=compareState.results['${esc(res.spec)}']; if(r){r.replyOpen=!r.replyOpen; render();}">${res.replyOpen?"show less":"show full reply"}</a>`;
+}
 function compareCol(res){
   if (res.error){
     const why = compareErrorReason(res.error);
@@ -318,7 +330,7 @@ function compareCol(res){
     </div>
     ${tools?`<div class="stages" style="flex-wrap:wrap">${tools}</div>`:""}
     ${res.sub?subPane(res.sub, false, res.spec):""}
-    <div class="r cmp-reply">${renderMarkdown(res.reply||"")}</div>
+    ${replyBlock(res)}
   </div>`;
 }
 

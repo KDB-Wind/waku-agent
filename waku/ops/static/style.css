@@ -391,3 +391,10 @@ details.subterm > summary.subterm-h::-webkit-details-marker{ display:none; }
 .subterm pre{ margin:0; padding:5px 8px; border-top:1px solid var(--line);
   font-size:11px; line-height:1.5; white-space:pre-wrap; word-break:break-word;
   max-height:96px; overflow-y:auto; }
+
+/* Arena card diet: clamp long replies (fade + toggle), one-line model names. */
+.cmp-reply.clamped{ max-height:150px; overflow:hidden; position:relative; }
+.cmp-reply.clamped::after{ content:""; position:absolute; left:0; right:0; bottom:0;
+  height:44px; background:linear-gradient(transparent, var(--panel)); }
+.cmp-more{ font-size:11px; display:inline-block; margin-top:2px; }
+.cmp-h code{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:15ch; }
