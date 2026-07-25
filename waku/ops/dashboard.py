@@ -950,6 +950,14 @@ def tools_info() -> dict:
             from waku.tools import apple
 
             tools += apple.make_tools()
+        if settings.experimental:
+            # Mirror build_registry: without this the catalog LIES after you
+            # flip the experimental toggle — delegate_task is missing until the
+            # first chat turn builds the real agent, so it looks like the
+            # switch did nothing.
+            from waku.tools import experimental as experimental_tools
+
+            tools += experimental_tools.make_tools(settings)
     for t in tools:
         catalog.append({"name": t.name, "description": t.description,
                         "source": _tool_source(t.name, mcp["servers"])})
