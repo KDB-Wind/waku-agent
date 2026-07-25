@@ -45,10 +45,12 @@ def test_turning_it_off_is_not_swallowed(monkeypatch):
     assert rule({}) is None                        # absent -> untouched
 
 
-def test_the_flag_actually_controls_delegate_task(tmp_path, monkeypatch):
-    """The whole point: flag off -> no delegate_task in the chat agent's tools;
-    flag on -> it's there. (Same contract the Arena gets via experimental=True.)"""
-    conn = None
+def test_an_explicit_setting_beats_the_global_env_switch(tmp_path, monkeypatch):
+    """The arena passes experimental per race. If build_registry ALSO consulted
+    WAKU_EXPERIMENTAL, then switching chat delegation on (which writes that var)
+    would silently force delegate_task into every non-coding race too. The
+    explicit Settings value must win — this is the isolation guarantee."""
+    monkeypatch.setenv("WAKU_EXPERIMENTAL", "1")      # global switch ON
     off = Settings(home=tmp_path / "off", experimental=False)
     on = Settings(home=tmp_path / "on", experimental=True)
     off.ensure_home()
