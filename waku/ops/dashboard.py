@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import threading
 import time
 from datetime import UTC, datetime
@@ -1406,6 +1407,11 @@ def settings_info() -> dict:
              "default_model": p.model, "default_small_model": p.small_model}
             for name, p in PROVIDERS.items()
         ],
+        # experimental tools (delegate_task -> pi). The ARENA can switch this on
+        # per-race, but the chat agent reads it from the environment — so without
+        # a toggle here, the sidebar chat could never delegate. See settings_save.
+        "experimental": s.experimental,
+        "pi_installed": bool(shutil.which("pi")),
         # optional web-search key (Tavily) — same BYOK treatment as provider keys
         "search_key_env": "TAVILY_API_KEY",
         "search_key_set": bool(os.getenv("TAVILY_API_KEY")),
@@ -1437,7 +1443,8 @@ def apply_settings(payload: dict) -> dict:
               "model": os.getenv("WAKU_MODEL", ""),
               "small_model": os.getenv("WAKU_SMALL_MODEL", "")}
     writable = ({"WAKU_PROVIDER", "WAKU_MODEL", "WAKU_SMALL_MODEL", "TAVILY_API_KEY",
-                 "WAKU_EPISODIC_STORE", "NOTION_TOKEN", "NOTION_EPISODES_DATABASE_ID"}
+                 "WAKU_EPISODIC_STORE", "WAKU_EXPERIMENTAL",
+                 "NOTION_TOKEN", "NOTION_EPISODES_DATABASE_ID"}
                 | {p.key_env for p in PROVIDERS.values()})
     env_path = find_dotenv(usecwd=True) or ".env"
 
@@ -1446,6 +1453,11 @@ def apply_settings(payload: dict) -> dict:
                "WAKU_SMALL_MODEL": payload.get("small_model", "") or ""}
     if episodic_store:
         updates["WAKU_EPISODIC_STORE"] = episodic_store
+    # NOT `if experimental:` — turning it OFF sends "", which is falsy. Absent
+    # (None) means "don't touch"; "" means "switch it off".
+    experimental = payload.get("experimental")
+    if experimental is not None:
+        updates["WAKU_EXPERIMENTAL"] = "1" if str(experimental).strip() else ""
     # Changing provider never carries a model across endpoints (live bug:
     # kimi->gemini kept gate model kimi-k3 and every turn 404'd on Gemini). But
     # if the user didn't newly type a model, use THIS provider's default (their
