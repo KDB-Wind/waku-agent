@@ -62,6 +62,26 @@ def _pi_supports_json(pi_bin: str) -> bool:
     return _PI_JSON_MODE
 
 
+def _project_pi_flags() -> list[str]:
+    """Hand the delegated pi this repo's own extensions and skills.
+
+    This is the "pi x waku" payoff: waku upgrades its coding contractor without
+    touching pi's source. pi auto-discovers project resources from cwd upward,
+    but delegated runs happen in waku_workspace/ (outside the repo), so we pass
+    explicit --extension / --skill flags with absolute paths. Any *.ts under
+    .pi/extensions/ and every skill under .agents/skills/ rides along — drop a
+    file in, and the next delegated run is stronger. No-op if the dirs are empty.
+    """
+    root = Path(__file__).resolve().parents[2]
+    flags: list[str] = []
+    for ext in sorted((root / ".pi" / "extensions").glob("*.ts")):
+        flags += ["--extension", str(ext)]
+    skills = root / ".agents" / "skills"
+    if skills.is_dir():
+        flags += ["--skill", str(skills)]
+    return flags
+
+
 def _record_subagent_usage(settings: Settings, tin: int, tout: int) -> None:
     """Append the sub-agent's spend to the SAME permanent ledger the loop uses
     (see Tracer._record_usage — tokens are the ground truth, dollars are
@@ -208,6 +228,7 @@ def make_delegate_tool(settings: Settings) -> Tool:
         json_mode = _pi_supports_json(pi_bin)
         if json_mode:
             cmd += ["--mode", "json"]
+        cmd += _project_pi_flags()   # the repo's own extensions + skills ride along
         cmd += ["-p", task, "-a", "--no-session"]
 
         raw_events: list[str] = []

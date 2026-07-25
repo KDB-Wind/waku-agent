@@ -82,8 +82,7 @@ arena" note in [benchmarks.md §3.B](benchmarks.md) for what's built vs. not.
 
 Segment order per Sean's retention call: **philosophy first, machine second,
 stakes last** — primitives are sprinkled as 15-second footnotes, never a cold
-open. Script backbone: [pi-agent-explained.md](pi-agent-explained.md) (each
-level = one segment). Boards: `docs/whiteboards/pi-architecture.excalidraw` +
+open. Script backbone: [pi-agent.md](pi-agent.md) — the single walkthrough. Boards: `docs/whiteboards/pi-architecture.excalidraw` +
 `pi-vs-claude-code.excalidraw` (open on excalidraw.com to film).
 
 ## Segment A — the philosophy (Level 4, cold open)

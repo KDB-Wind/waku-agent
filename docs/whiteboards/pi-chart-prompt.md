@@ -4,8 +4,7 @@ Paste everything between the fences into Claude Code (VS Code extension) or any
 model that can emit SVG/Excalidraw. Facts were verified live against pi 0.80.10
 on 2026-07-24; the numbers are load-bearing, don't let a model invent new ones.
 
-Companion: [pi-agent-explained.md](../pi-agent-explained.md) (the six-level
-teaching doc) · masters in this folder.
+Companion: [pi-agent.md](../pi-agent.md) — the walkthrough this chart illustrates.
 
 ---
 

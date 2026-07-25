@@ -18,7 +18,10 @@ so re-running produces byte-identical output and diffs stay clean.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
 import itertools
+import pathlib
 
 # ---- the style constants (from the masters) --------------------------------
 
@@ -285,6 +288,75 @@ def watermark(x, y):
     return text(x, y, "@ShenSeanChen", size=FS_BODY, color=PAL["grey"][1])
 
 
+# ---- standard components (match the hand-drawn masters) --------------------
+
+def card(x, y, w, title, body, *, color="plain", title_color=None,
+         body_color=INK, min_h=0, frame=None, group=None):
+    """The workhorse teaching box: rounded, title + short bullets, auto-height.
+
+    Default is BLACK stroke / white fill (color="plain") — matching the masters,
+    where 146/159 boxes are black and colour is reserved for container boundaries
+    and highlights. Pass color= only to deliberately highlight a box.
+    """
+    lines = body.count("\n") + 1 if body else 0
+    h = max(min_h, 42 + lines * 22 + 20)
+    box = labeled_box(x, y, w, h, "", color=color, frame=frame, group=group)
+    tcol = title_color or (INK if color == "plain" else PAL[color][1])
+    out = list(box)
+    out.append(text(x + 18, y + 15, title, size=FS_HEADER, color=tcol,
+                    frame=frame, group=group))
+    if body:
+        out.append(text(x + 18, y + 52, body, size=FS_BODY, color=body_color,
+                        frame=frame, group=group))
+    return out
+
+
+# ---- images + social logos -------------------------------------------------
+
+ASSETS = pathlib.Path(__file__).resolve().parent / "assets"
+_FILES: dict = {}
+
+
+def image(path, x, y, w, h, *, frame=None, group=None):
+    """Embed a PNG/JPEG as an Excalidraw image element (registers its file)."""
+    p = pathlib.Path(path)
+    if not p.is_absolute():
+        p = ASSETS / path
+    data = p.read_bytes()
+    mime = "image/jpeg" if p.suffix.lower() in (".jpg", ".jpeg") else "image/png"
+    fid = hashlib.sha1(str(p).encode()).hexdigest()
+    if fid not in _FILES:
+        b64 = base64.b64encode(data).decode()
+        _FILES[fid] = {"mimeType": mime, "id": fid,
+                       "dataURL": f"data:{mime};base64,{b64}", "created": 1}
+    n = next(_ids)
+    return {
+        "id": f"img-{n:04d}", "type": "image",
+        "x": float(x), "y": float(y), "width": float(w), "height": float(h),
+        "angle": 0, "strokeColor": "transparent", "backgroundColor": "transparent",
+        "fillStyle": "solid", "strokeWidth": 1, "strokeStyle": "solid",
+        "roughness": 0, "opacity": 100, "groupIds": [group] if group else [],
+        "frameId": frame, "roundness": None, "seed": _seed(n),
+        "version": 1, "versionNonce": _seed(n + 5), "isDeleted": False,
+        "boundElements": [], "updated": 1, "link": None, "locked": False,
+        "status": "saved", "fileId": fid, "scale": [1, 1],
+    }
+
+
+def socials_logos(x, y, *, size=44, row=58, text_dx=64):
+    """Sean's socials block WITH the real logos (github / youtube / x)."""
+    rows = [("github.png", 1.0, "@ShenSeanChen"),
+            ("youtube.png", 85 / 60, "@SeanAIStories"),
+            ("x.jpg", 1.0, "@ShenSeanChen")]
+    out = []
+    for i, (logo, aspect, handle) in enumerate(rows):
+        yy = y + i * row
+        out.append(image(logo, x, yy, size * aspect, size))
+        out.append(text(x + text_dx, yy + size / 2 - FS_BODY * LINE_HEIGHT / 2,
+                        handle, size=FS_BODY, color=INK))
+    return out
+
+
 # ---- document + validation -------------------------------------------------
 
 def document(elements):
@@ -292,7 +364,7 @@ def document(elements):
         "type": "excalidraw", "version": 2, "source": "waku/ops/whiteboard",
         "elements": elements,
         "appState": {"gridSize": None, "viewBackgroundColor": "#ffffff"},
-        "files": {},
+        "files": {fid: dict(f) for fid, f in _FILES.items()},
     }
 
 
