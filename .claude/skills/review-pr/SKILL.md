@@ -13,6 +13,24 @@ Sean maintains waku-agent solo while a community sends PRs against the
 `good first issue` list. He needs to decide fast, without reading diffs, and he
 reads/repeats these decisions in both English and Chinese (for the channel).
 
+## The hard rule, before anything else
+
+**NEVER approve, merge, or close a PR without Sean's explicit go-ahead for
+THAT specific PR.** Not "I reviewed it and it's good" — an actual yes from him,
+per PR, after he has seen the summary.
+
+Approving a *plan* that says "drain the queue" is NOT approval to merge. Neither
+is "go", "sure", or "continue" on a broader task. This was violated on
+2026-07-26: six PRs were merged off a plan approval, and Sean had tested none of
+them himself. His words: *"i have not even tested them myself so i am concerned."*
+
+The correct loop is: review → test → **present a table** (what it does, how it
+solves it, exactly how it was tested, what was NOT tested) → wait → he says
+merge → merge. Testing together is the point; he is the one who has to live
+with the repo.
+
+Post review comments and change requests freely. Merging is his call.
+
 ## Non-negotiables
 
 1. **Test before you judge.** Never review from the diff alone. Check the PR out
