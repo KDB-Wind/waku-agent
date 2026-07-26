@@ -15,28 +15,12 @@ Built for [Sean's AI Stories](https://www.youtube.com/@SeanAIStories).
 
 ![waku-agent architecture — the whiteboard](docs/architecture-whiteboard.png)
 
-> The system-design whiteboard from the [Sean's AI Stories](https://www.youtube.com/@SeanAIStories)
-> series. For the **code-accurate** version (every box → a file it maps to), see
-> [The whiteboard maps to the code](#the-whiteboard-maps-to-the-code) below.
->
-> **▶ Watch the 20-min code walkthrough:** [You Can Build Your Own Local AI Agent](https://www.youtube.com/watch?v=rvRyBhILrls&list=PLE9hy4A7ZTmpGq7GHf5tgGFWh2277AeDR&index=42) — every part of this repo, live: the loop, the memory pillars, the evals, the Telegram gateway, and the "Waku Waku" voice wake word.
->
-> ---
+> The system-design whiteboard from [Sean's AI Stories](https://www.youtube.com/@SeanAIStories).
+> Every box maps to a file — see [the whiteboard maps to the code](#the-whiteboard-maps-to-the-code).
 
-## Watch & follow
+**▶ [Watch the 20-min code walkthrough](https://www.youtube.com/watch?v=rvRyBhILrls&list=PLE9hy4A7ZTmpGq7GHf5tgGFWh2277AeDR&index=42)** — the loop, the memory pillars, the evals, the Telegram gateway and the "Waku Waku" wake word, live.
 
-- **Video walkthrough:** [You Can Build Your Own Local AI Agent In 20 Min](https://www.youtube.com/watch?v=rvRyBhILrls&list=PLE9hy4A7ZTmpGq7GHf5tgGFWh2277AeDR&index=42)
-- **YouTube:** [Sean's AI Stories](https://www.youtube.com/@SeanAIStories)
-- **X:** [@ShenSeanChen](https://x.com/ShenSeanChen)
-- **LinkedIn:** [shen-sean-chen](https://linkedin.com/in/shen-sean-chen)
-- **Instagram:** [@sean_ai_stories](https://www.instagram.com/sean_ai_stories)
-- **Discord:** [Sean's Discord](https://discord.gg/tvECErKcFr) · [AutoManus Discord](https://discord.gg/5HhcNjCR)
-
-## Support
-
-- ☕️ **Buy me a coffee:** [Cafe Latte](https://buy.stripe.com/5kA176bA895ggog4gh)
-- 🚀 **Launch Full-Stack App Template:** [launch-mvp-stripe-nextjs-supabase](https://github.com/ShenSeanChen/launch-mvp-stripe-nextjs-supabase) — NextJS + Supabase + Stripe, everything you need to ship a SaaS
-- 💻 **My AI startup:** [AutoManus.io](https://automanus.io) — an AI sales lead manager for made-to-order product sales. We embed where conversations happen (WhatsApp, email, web chat) to capture inbound, automate follow-ups, and kill CRM busywork. Pre-seed backed by Character VC.
+[YouTube](https://www.youtube.com/@SeanAIStories) · [X](https://x.com/ShenSeanChen) · [LinkedIn](https://linkedin.com/in/shen-sean-chen) · [Instagram](https://www.instagram.com/sean_ai_stories) · [Discord](https://discord.gg/tvECErKcFr) · [☕️ buy me a coffee](https://buy.stripe.com/5kA176bA895ggog4gh)
 
 ## Quickstart
 
@@ -507,6 +491,11 @@ community skills are all shaped to be first PRs; the easiest needs no Python at 
 
 **Comment on an issue before you start** and it gets assigned to you, so two people
 never build the same thing.
+
+## Also from me
+
+- **[launch-mvp-stripe-nextjs-supabase](https://github.com/ShenSeanChen/launch-mvp-stripe-nextjs-supabase)** — NextJS + Supabase + Stripe, everything you need to ship a SaaS.
+- **[AutoManus.io](https://automanus.io)** — my AI startup: a sales lead manager for made-to-order products. It embeds where conversations already happen (WhatsApp, email, web chat) to capture inbound, automate follow-ups and kill CRM busywork. Pre-seed backed by Character VC. ([AutoManus Discord](https://discord.gg/5HhcNjCR))
 
 MIT — see [LICENSE](LICENSE). Built by [@ShenSeanChen](https://github.com/ShenSeanChen)
 ([YouTube](https://www.youtube.com/@SeanAIStories) · [X](https://x.com/ShenSeanChen)).
