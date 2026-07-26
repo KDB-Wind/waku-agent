@@ -31,7 +31,7 @@ from pathlib import Path
 
 from waku.config import load_settings
 from waku.db import connect
-from waku.ops import compare_history
+from waku.ops import browser_agent, compare_history
 from waku.ops.arena import (
     compare_clear,
     compare_delete_run,
@@ -39,7 +39,10 @@ from waku.ops.arena import (
     compare_stream,
     history_response,
 )
-from waku.ops.pricing import price_for, remember_price, usage_summary
+from waku.ops.browser_agent import agent_lock, dash_session, get_agent, maybe_rotate_session
+from waku.ops.catalog import list_models
+from waku.ops.pricing import price_for, usage_summary
+from waku.ops.settings_api import apply_settings, pin_action, settings_info
 from waku.ops.tracing import TraceEncodingError, iter_trace_lines
 
 PORT = 7777
@@ -47,91 +50,6 @@ PORT = 7777
 # served as-is by this stdlib server — no build step, no framework. Edit those
 # to change the UI; edit this file to change the server/API.
 STATIC = Path(__file__).resolve().parent / "static"
-
-# One shared agent for the browser gateway. Built lazily (first chat), reused
-# across the threaded server's workers via a cross-thread connection + a lock
-# so chats run one at a time — correct for a single-user local tool.
-_agent = None
-_agent_lock = threading.Lock()
-_dashboard_session = None  # this dashboard run's chat thread (dated; stable across refreshes)
-
-
-def _dash_session() -> str:
-    """The thread new dashboard chats belong to. Resolved once per process:
-    RESUME the most recent recent dashboard thread (so a restart keeps the chat
-    on screen), else start a fresh dated one. Never the eternal 'default'."""
-    global _dashboard_session
-    if _dashboard_session is None:
-        try:
-            conn = connect(load_settings().home)
-            _dashboard_session = _resume_or_new_session(conn)
-            conn.close()
-        except Exception:
-            _dashboard_session = datetime.now().strftime("dashboard-%Y%m%d-%H%M%S")
-    return _dashboard_session
-
-
-def _resume_or_new_session(conn) -> str:
-    """Pick this run's thread: RESUME the most recent dashboard thread if its
-    last message is still fresh (within the idle window), else start a new dated
-    one. Without this, every server restart minted a brand-new empty thread and
-    the visible chat 'vanished' (it was only parked under the old id). An idle
-    gap still rotates — that's _maybe_rotate_session's job once we're running."""
-    idle_min = int(os.getenv("WAKU_SESSION_IDLE_MINUTES", "60"))
-    # Match by source, not id prefix: "+ New chat" makes 's-...' ids, so a
-    # 'dashboard-%' filter would orphan those threads on restart. Every dashboard
-    # message is tagged source='dashboard' — that's the reliable signal.
-    row = conn.execute(
-        "SELECT session_id, MAX(created_at) AS last_at FROM chat_log "
-        "WHERE source='dashboard' GROUP BY session_id "
-        "ORDER BY last_at DESC LIMIT 1"
-    ).fetchone()
-    if row and row["last_at"]:
-        try:
-            last = datetime.strptime(row["last_at"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
-            if idle_min <= 0 or (datetime.now(UTC) - last).total_seconds() <= idle_min * 60:
-                return row["session_id"]
-        except ValueError:
-            pass
-    return datetime.now().strftime("dashboard-%Y%m%d-%H%M%S")
-
-
-def _get_agent():
-    global _agent, _dashboard_session
-    if _agent is None:
-        from waku.app import Waku
-
-        settings = load_settings()
-        settings.ensure_home()
-        conn = connect(settings.home, check_same_thread=False)
-        _agent = Waku(settings=settings, conn=conn)
-        # A dashboard run resumes its last recent thread (so a restart/refresh
-        # keeps the chat on screen), or starts fresh if that thread is idle.
-        # Same id collect() reports, so the dock restores the right conversation.
-        _dashboard_session = _resume_or_new_session(conn)
-        _agent.session.session_id = _dashboard_session
-    return _agent
-
-
-def _maybe_rotate_session(agent) -> None:
-    """A returning user should get a FRESH thread, not last week's. If the
-    current session's newest message is older than WAKU_SESSION_IDLE_MINUTES
-    (default 60), rotate to a new dated session id — the old thread stays one
-    click away in History. Live bug: a tester came back days later and their
-    new chat landed in a week-old 32-message thread."""
-    idle_min = int(os.getenv("WAKU_SESSION_IDLE_MINUTES", "60"))
-    if idle_min <= 0:
-        return
-    row = agent.conn.execute("SELECT MAX(created_at) FROM chat_log WHERE session_id=?",
-                             (agent.session.session_id,)).fetchone()
-    if not row or not row[0]:
-        return
-    try:  # sqlite datetime('now') is UTC "YYYY-MM-DD HH:MM:SS"
-        last = datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
-    except ValueError:
-        return
-    if (datetime.now(UTC) - last).total_seconds() > idle_min * 60:
-        agent.session.start_new(datetime.now().strftime("dashboard-%Y%m%d-%H%M%S"))
 
 
 def chat(message: str) -> dict:
@@ -166,9 +84,9 @@ def chat_stream(message: str, emit) -> None:
             events.append({"kind": kind, **ev})
         emit(kind, ev)
 
-    with _agent_lock:
-        agent = _get_agent()
-        _maybe_rotate_session(agent)
+    with agent_lock:
+        agent = get_agent()
+        maybe_rotate_session(agent)
         start = datetime.now(UTC)
         result = agent.respond(message, observer=observer, source="dashboard", stream=True)
         latency_ms = int((datetime.now(UTC) - start).total_seconds() * 1000)
@@ -381,6 +299,10 @@ def collect() -> dict:
         "all_tables": all_tables,
     }
 
+    # Peek at the shared agent WITHOUT building one — a page load should never
+    # pay for an agent nobody has chatted with yet.
+    live = browser_agent.current()
+
     return {
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "home": str(home.resolve()),
@@ -416,7 +338,7 @@ def collect() -> dict:
         "chat_pending": conn.execute("SELECT COUNT(*) FROM chat_log WHERE consolidated=0").fetchone()[0],
         "chat_log": rows("SELECT role, content, consolidated, source, session_id, created_at FROM chat_log ORDER BY id DESC LIMIT 80")[::-1],
         "sessions": session_list(conn),
-        "current_session": (_agent.session.session_id if _agent is not None else _dash_session()),
+        "current_session": (live.session.session_id if live is not None else dash_session()),
         "consolidate_every": settings.consolidate_every,
         "calendar": rows('SELECT title, start, "end", attendees, created_at FROM calendar_events ORDER BY start'),
         "outbox": outbox,
@@ -509,9 +431,10 @@ def tools_info() -> dict:
             pass
 
     catalog = []
-    if _agent is not None:
-        mcp["live"] = getattr(_agent, "mcp_bridge", None) is not None
-        tools = list(_agent.tools._tools.values())
+    live = browser_agent.current()
+    if live is not None:
+        mcp["live"] = getattr(live, "mcp_bridge", None) is not None
+        tools = list(live.tools._tools.values())
     else:
         # Display-only: same tools minus MCP (building the real registry would
         # start MCP servers, which we don't want on a 5-second poll).
@@ -667,8 +590,8 @@ def session_action(payload: dict) -> dict:
         conn = connect(settings.home)
         sid = payload.get("id") or "default"
         return {"ok": True, "session_id": sid, "history": _thread_history(conn, sid)}
-    with _agent_lock:
-        agent = _get_agent()
+    with agent_lock:
+        agent = get_agent()
         if action == "new":
             sid = datetime.now().strftime("s-%Y%m%d-%H%M%S")
             agent.session.start_new(sid)
@@ -685,7 +608,6 @@ def session_action(payload: dict) -> dict:
 
 def _editor_cmd() -> list[str] | None:
     """The user's code editor CLI: $WAKU_EDITOR, then cursor, then code."""
-    import shutil
 
     custom = os.getenv("WAKU_EDITOR")
     if custom and shutil.which(custom):
@@ -783,337 +705,6 @@ def memory_action(payload: dict) -> dict:
     return {"error": f"unknown action {action}"}
 
 
-_models_cache: dict[str, tuple[float, list]] = {}
-
-
-def _known_default_ids(prov, out: dict, is_active: bool) -> list[dict]:
-    """Best-effort model list when the live catalog is unreachable: the provider's
-    flagship + fast + loop/gate defaults — so the showcase model (e.g. opus-4.8)
-    is offered too, not just the two loop defaults — plus the active model when
-    this is the active provider."""
-    ids = [*(prov.default_pair() if prov else []),
-           prov.model if prov else "", prov.small_model if prov else ""]
-    if is_active:
-        ids = [out.get("model"), out.get("small_model"), *ids]
-    return [{"id": m} for m in dict.fromkeys(m for m in ids if m)]
-
-
-def list_models(provider: str | None = None) -> dict:
-    """Model ids available on a provider, for the settings model picker — the
-    defaults are starting points, never the menu. Pass `provider` to list ANY
-    provider's catalog (the "Your models" add-row picks a provider first);
-    without it, the ACTIVE provider is used. Three sources: an explicit
-    Provider.catalog_url (anthropic, kimi), GET {base_url}/models on
-    OpenAI-compatible endpoints (OpenRouter, Gemini, any WAKU_BASE_URL), or the
-    two known defaults when no catalog exists. OpenRouter entries carry free /
-    tool-support / context metadata so the picker can surface the $0
-    tool-capable models. Cached 5 minutes."""
-    import time
-    import urllib.request
-
-    from waku.loop.models import PROVIDERS
-
-    s = load_settings()
-    # An explicit provider overrides the active one (and its custom base_url:
-    # WAKU_BASE_URL only applies to the provider it was set for).
-    name = provider or s.provider
-    prov = PROVIDERS.get(name)
-    base = (s.base_url if name == s.provider else None) or (prov.base_url if prov else None)
-    out = {
-        "provider": name,
-        "model": s.model or (prov.model if prov else ""),
-        "small_model": s.small_model or (prov.small_model if prov else ""),
-        "endpoint": base or name,
-    }
-    # Where can this provider's models be listed? An explicit catalog_url wins
-    # (kimi chats on the anthropic wire but lists on its OpenAI-compatible API;
-    # anthropic itself has GET /v1/models); otherwise openai-wire endpoints get
-    # {base_url}/models; otherwise fall back to the two known defaults.
-    if prov is not None and prov.catalog_url:
-        url = prov.catalog_url
-    elif prov is not None and prov.kind == "openai" and base:
-        url = base.rstrip("/") + "/models"
-    else:
-        # No catalog endpoint: fall back to the provider's own known defaults
-        # (flagship + fast + loop/gate), not just the active model.
-        return {**out, "listed": False,
-                "models": _known_default_ids(prov, out, name == s.provider)}
-
-    cached = _models_cache.get(url)
-    if cached and time.time() - cached[0] < 300:
-        _ts, cmodels, cerr = cached          # cerr None on a real listing
-        r = {**out, "listed": cerr is None, "models": cmodels}
-        if cerr:
-            r["error"] = cerr
-        return r
-    # Use this provider's own key; s.api_key only holds the ACTIVE provider's.
-    key = ((s.api_key if name == s.provider else "") or os.getenv(prov.key_env, "")).strip()
-    # HTTP headers must be latin-1; a key with a stray non-ASCII char (a smart
-    # arrow/quote or a line-break from a bad paste) would otherwise crash the
-    # whole listing with an opaque codec error and silently drop back to two
-    # defaults. Catch it here with a message that actually says how to fix it.
-    try:
-        key.encode("latin-1")
-    except UnicodeEncodeError:
-        msg = (f"{prov.key_env} contains a non-ASCII character — re-paste the key "
-               f"(no spaces, line breaks, or arrows).")
-        return {**out, "listed": False,
-                "models": _known_default_ids(prov, out, name == s.provider), "error": msg}
-    # send both auth styles — Bearer for OpenAI-compatible catalogs, x-api-key +
-    # version for Anthropic's; each server reads the header it knows
-    req = urllib.request.Request(url, headers={
-        "Authorization": f"Bearer {key}",
-        "x-api-key": key, "anthropic-version": "2023-06-01",
-    })
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read())
-    except Exception as exc:
-        # Surface the server's actual reason (e.g. xAI's 403 "no credits"), not
-        # just "HTTP Error 403" — an HTTPError carries the body on .read().
-        msg = str(exc)
-        try:
-            msg = f"{msg} — {exc.read().decode()[:160]}"
-        except Exception:
-            pass
-        # still offer the provider's known defaults so the picker isn't empty
-        known = _known_default_ids(prov, out, name == s.provider)
-        # cache the failure (defaults + reason) for ~1 minute so an unreachable
-        # catalog doesn't stall every 5-second dashboard poll for 10s — and so a
-        # cache hit still shows the defaults and the reason, not a blank list.
-        _models_cache[url] = (time.time() - 240, known, msg)
-        return {**out, "listed": False, "models": known, "error": msg}
-    models = []
-    for m in data.get("data", []):
-        mid = m.get("id", "")
-        if not mid:
-            continue
-        pricing = m.get("pricing") or {}
-        params = m.get("supported_parameters")
-        entry = {
-            "id": mid,
-            "free": mid.endswith(":free") or pricing.get("prompt") == "0",
-            # None means the endpoint doesn't say (only OpenRouter reports this)
-            "tools": ("tools" in params) if params is not None else None,
-            # reasoning models spend tokens thinking out loud, which breaks the
-            # gate's tiny budget: the UI steers them away from the gate slot
-            "reasoning": ("reasoning" in params) if params is not None else None,
-            "context": m.get("context_length"),
-        }
-        try:
-            # OpenRouter prices are $/token strings; keep $/M for display + cost
-            pin, pout = float(pricing["prompt"]) * 1e6, float(pricing["completion"]) * 1e6
-            remember_price(mid, pin, pout)
-            entry["price_in"], entry["price_out"] = round(pin, 3), round(pout, 3)
-        except (KeyError, TypeError, ValueError):
-            pass
-        models.append(entry)
-    models.sort(key=lambda x: (not x["free"], x["tools"] is False, x["id"]))
-    _models_cache[url] = (time.time(), models, None)   # None error = a real listing
-    return {**out, "listed": True, "models": models}
-
-
-def _models_json() -> Path:
-    return load_settings().home / "models.json"
-
-
-def default_pinned_specs() -> list[str]:
-    """Starter shortlist before the user has curated their own: flagship + fast
-    for every provider that has a key set (so the switcher only shows models you
-    can actually use). Flagship comes first, so it's that provider's default."""
-    from waku.loop.models import PROVIDERS
-
-    specs = []
-    for name, prov in PROVIDERS.items():
-        if os.getenv(prov.key_env):
-            specs += [f"{name}:{m}" for m in prov.default_pair()]
-    return specs
-
-
-def pinned_specs() -> list[str]:
-    """The user's curated 'provider:model' shortlist (ordered), from
-    .waku/models.json. The chat switcher shows exactly these. Before they've
-    saved anything, fall back to the flagship+fast defaults."""
-    p = _models_json()
-    if p.exists():
-        try:
-            return json.loads(p.read_text(encoding="utf-8")).get("pinned", [])
-        except (json.JSONDecodeError, OSError):
-            pass
-    return default_pinned_specs()
-
-
-def default_model_for(provider: str) -> str:
-    """A provider's default model = the FIRST one the user pinned for it.
-    Empty string means 'use the provider's built-in default'."""
-    for spec in pinned_specs():
-        p, _, m = spec.partition(":")
-        if p == provider and m:
-            return m
-    return ""
-
-
-def pin_action(payload: dict) -> dict:
-    """Manage the curated model shortlist: pin / unpin / make-default."""
-    action = payload.get("action")
-    provider, model = payload.get("provider", ""), payload.get("model", "")
-    if not provider or not model:
-        return {"error": "provider and model required"}
-    spec = f"{provider}:{model}"
-    specs = [s for s in pinned_specs() if s != spec]
-    if action == "pin":
-        specs.append(spec)
-    elif action == "default":
-        # move to the front of its provider's group -> becomes that provider's default
-        idx = next((i for i, s in enumerate(specs) if s.split(":", 1)[0] == provider), len(specs))
-        specs.insert(idx, spec)
-    elif action != "unpin":
-        return {"error": f"unknown action {action}"}
-    path = _models_json()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"pinned": specs}, indent=1))
-    return {"ok": True, **settings_info()}
-
-
-def settings_info() -> dict:
-    """Current provider/model + which keys are set — masked to last-4, never
-    the full key. `pinned` is the user's curated model shortlist (the chat
-    switcher shows exactly these, across providers)."""
-    from waku.loop.models import PROVIDERS
-
-    s = load_settings()
-    prov = PROVIDERS.get(s.provider)
-    # the curated shortlist, in order; the first pinned model per provider is
-    # that provider's default (used when you switch providers).
-    pinned, seen = [], set()
-    for spec in pinned_specs():
-        p, _, m = spec.partition(":")
-        if m:
-            pinned.append({"provider": p, "model": m, "default": p not in seen})
-            seen.add(p)
-    # Group by provider for display (so all of one lab's models sit together,
-    # e.g. a late-added claude-fable-5 joins the other anthropic rows). A STABLE
-    # sort by provider's first-appearance order keeps each provider's own order —
-    # so its default (first pinned) stays on top and the 'default' flags above
-    # still line up.
-    prov_order: dict = {}
-    for row in pinned:
-        prov_order.setdefault(row["provider"], len(prov_order))
-    pinned.sort(key=lambda row: prov_order[row["provider"]])
-    return {
-        "provider": s.provider,
-        "model": s.model or (prov.model if prov else ""),
-        "small_model": s.small_model or (prov.small_model if prov else ""),
-        "pinned": pinned,
-        # a custom endpoint (e.g. OpenRouter) set via WAKU_BASE_URL / WAKU_API_KEY
-        "base_url": s.base_url or "",
-        "custom_key_set": bool(s.api_key),
-        "providers": [
-            {"name": name, "key_env": p.key_env,
-             "key_set": bool(os.getenv(p.key_env)),
-             "key_last4": (os.getenv(p.key_env) or "")[-4:],
-             "default_model": p.model, "default_small_model": p.small_model}
-            for name, p in PROVIDERS.items()
-        ],
-        # experimental tools (delegate_task -> pi). The ARENA can switch this on
-        # per-race, but the chat agent reads it from the environment — so without
-        # a toggle here, the sidebar chat could never delegate. See settings_save.
-        "experimental": s.experimental,
-        "pi_installed": bool(shutil.which("pi")),
-        # optional web-search key (Tavily) — same BYOK treatment as provider keys
-        "search_key_env": "TAVILY_API_KEY",
-        "search_key_set": bool(os.getenv("TAVILY_API_KEY")),
-        "search_key_last4": (os.getenv("TAVILY_API_KEY") or "")[-4:],
-        # episodic-memory backend: sqlite (default) or notion
-        "episodic_store": s.episodic_store,
-        "notion_token_set": bool(os.getenv("NOTION_TOKEN")),
-        "notion_token_last4": (os.getenv("NOTION_TOKEN") or "")[-4:],
-        "notion_db_set": bool(os.getenv("NOTION_EPISODES_DATABASE_ID")),
-        "notion_db_last4": (os.getenv("NOTION_EPISODES_DATABASE_ID") or "")[-4:],
-    }
-
-
-def apply_settings(payload: dict) -> dict:
-    """Write .env + os.environ, then rebuild the agent so the switch is live.
-    Never logs keys; only whitelisted env names are writable."""
-    global _agent
-    from dotenv import find_dotenv, set_key
-
-    from waku.loop.models import PROVIDERS
-
-    provider = payload.get("provider")
-    if provider not in PROVIDERS:
-        return {"error": f"unknown provider {provider}"}
-    episodic_store = payload.get("episodic_store")
-    if episodic_store is not None and episodic_store not in ("sqlite", "notion"):
-        return {"error": f"unknown episodic_store {episodic_store}"}
-    before = {"provider": os.getenv("WAKU_PROVIDER", ""),
-              "model": os.getenv("WAKU_MODEL", ""),
-              "small_model": os.getenv("WAKU_SMALL_MODEL", "")}
-    writable = ({"WAKU_PROVIDER", "WAKU_MODEL", "WAKU_SMALL_MODEL", "TAVILY_API_KEY",
-                 "WAKU_EPISODIC_STORE", "WAKU_EXPERIMENTAL",
-                 "NOTION_TOKEN", "NOTION_EPISODES_DATABASE_ID"}
-                | {p.key_env for p in PROVIDERS.values()})
-    env_path = find_dotenv(usecwd=True) or ".env"
-
-    updates = {"WAKU_PROVIDER": provider,
-               "WAKU_MODEL": payload.get("model", "") or "",
-               "WAKU_SMALL_MODEL": payload.get("small_model", "") or ""}
-    if episodic_store:
-        updates["WAKU_EPISODIC_STORE"] = episodic_store
-    # NOT `if experimental:` — turning it OFF sends "", which is falsy. Absent
-    # (None) means "don't touch"; "" means "switch it off".
-    experimental = payload.get("experimental")
-    if experimental is not None:
-        updates["WAKU_EXPERIMENTAL"] = "1" if str(experimental).strip() else ""
-    # Changing provider never carries a model across endpoints (live bug:
-    # kimi->gemini kept gate model kimi-k3 and every turn 404'd on Gemini). But
-    # if the user didn't newly type a model, use THIS provider's default (their
-    # first pinned model for it, else its built-in default) — "a default model
-    # per API key". An explicit model in the payload (e.g. from the chat pill)
-    # always wins.
-    if provider != before["provider"]:
-        if updates["WAKU_MODEL"] in ("", before["model"]):
-            updates["WAKU_MODEL"] = default_model_for(provider)
-        if updates["WAKU_SMALL_MODEL"] in ("", before["small_model"]):
-            updates["WAKU_SMALL_MODEL"] = ""
-    for k, v in (payload.get("keys") or {}).items():
-        if k in writable and v:  # only non-empty keys overwrite
-            if k == "NOTION_EPISODES_DATABASE_ID":
-                from waku.memory.episodic.notion_store import normalize_database_id
-
-                try:
-                    v = normalize_database_id(v)
-                except ValueError as exc:
-                    return {"error": str(exc)}
-            updates[k] = v
-    for k, v in updates.items():
-        if k in writable:
-            set_key(env_path, k, v)
-            os.environ[k] = v
-
-    with _agent_lock:
-        old = _agent
-        try:
-            new_settings = load_settings()
-            new_settings.ensure_home()
-            conn = connect(new_settings.home, check_same_thread=False)
-            from waku.app import Waku
-
-            _agent = Waku(settings=new_settings, conn=conn)
-        except (Exception, SystemExit) as exc:  # get_client raises SystemExit
-            _agent = old
-            return {"error": str(exc)}
-    if old is not None:
-        old.close()
-    # a model/provider switch is a RELEASE event (the whiteboard's "new model
-    # config" box) — record it in the trace so brain swaps are auditable
-    _agent.tracer.event("config", {
-        "from": before,
-        "to": {"provider": provider, "model": updates["WAKU_MODEL"],
-               "small_model": updates["WAKU_SMALL_MODEL"]},
-    })
-    return {"ok": True, **settings_info()}
 
 
 def events_since(cursor):

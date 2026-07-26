@@ -15,7 +15,8 @@ import json
 
 import pytest
 
-from waku.ops import dashboard as d
+from waku.ops import catalog
+from waku.ops import settings_api as d
 
 PROVIDER_KEYS = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "DEEPSEEK_API_KEY",
                  "MINIMAX_API_KEY", "MOONSHOT_API_KEY", "ZHIPU_API_KEY", "OPENROUTER_API_KEY",
@@ -52,17 +53,17 @@ def test_pin_persists_and_marks_first_per_provider_default(home):
 
 
 def test_default_model_for_reads_first_pinned(home):
-    assert d.default_model_for("kimi") == ""          # nothing pinned yet
+    assert catalog.default_model_for("kimi") == ""          # nothing pinned yet
     d.pin_action({"action": "pin", "provider": "kimi", "model": "kimi-k3"})
     d.pin_action({"action": "pin", "provider": "kimi", "model": "kimi-k2.6"})
-    assert d.default_model_for("kimi") == "kimi-k3"   # the first one
+    assert catalog.default_model_for("kimi") == "kimi-k3"   # the first one
 
 
 def test_make_default_moves_model_to_front_of_its_group(home):
     d.pin_action({"action": "pin", "provider": "kimi", "model": "kimi-k3"})
     d.pin_action({"action": "pin", "provider": "kimi", "model": "kimi-k2.6"})
     d.pin_action({"action": "default", "provider": "kimi", "model": "kimi-k2.6"})
-    assert d.default_model_for("kimi") == "kimi-k2.6"
+    assert catalog.default_model_for("kimi") == "kimi-k2.6"
 
 
 def test_unpin_removes_and_promotes_next_default(home):
@@ -70,7 +71,7 @@ def test_unpin_removes_and_promotes_next_default(home):
     d.pin_action({"action": "pin", "provider": "gemini", "model": "gemini-3.5-pro"})
     info = d.pin_action({"action": "unpin", "provider": "gemini", "model": "gemini-3.5-flash"})
     assert [p["model"] for p in info["pinned"]] == ["gemini-3.5-pro"]
-    assert d.default_model_for("gemini") == "gemini-3.5-pro"   # survivor is now default
+    assert catalog.default_model_for("gemini") == "gemini-3.5-pro"   # survivor is now default
 
 
 def test_switching_provider_adopts_its_pinned_default(home, monkeypatch):
@@ -106,7 +107,7 @@ def test_pinned_are_grouped_by_provider_for_display(home):
 def test_no_pins_is_empty_not_error(home):
     info = d.settings_info()
     assert info["pinned"] == []
-    assert d.default_model_for("anthropic") == ""
+    assert catalog.default_model_for("anthropic") == ""
 
 
 def test_default_pair_is_flagship_then_fast(home):
@@ -133,8 +134,8 @@ def test_defaults_apply_before_curation_and_only_for_keyed_providers(home, monke
         ("anthropic", "claude-opus-4-8", True), ("anthropic", "claude-sonnet-5", False),
         ("kimi", "kimi-k3", True), ("kimi", "kimi-k2.7-code-highspeed", False),
     ]
-    assert d.default_model_for("kimi") == "kimi-k3"        # flagship is the default
-    assert d.default_model_for("gemini") == ""            # unkeyed -> no default
+    assert catalog.default_model_for("kimi") == "kimi-k3"        # flagship is the default
+    assert catalog.default_model_for("gemini") == ""            # unkeyed -> no default
 
 
 def test_pinning_snapshots_defaults_then_diverges(home, monkeypatch):
@@ -172,8 +173,8 @@ def test_list_models_honors_provider_override(home, monkeypatch):
 
     url = PROVIDERS["kimi"].catalog_url
     # cache tuple is (ts, models, error) — None error means a real listing
-    monkeypatch.setattr(d, "_models_cache", {url: (time.time(), [{"id": "kimi-k3"}], None)})
-    out = d.list_models("kimi")
+    monkeypatch.setattr(catalog, "_models_cache", {url: (time.time(), [{"id": "kimi-k3"}], None)})
+    out = catalog.list_models("kimi")
     assert out["provider"] == "kimi"
     assert out["listed"] is True
     assert [m["id"] for m in out["models"]] == ["kimi-k3"]

@@ -2,8 +2,15 @@
 
 This is a characterization net, not a feature test. It exists so that moving or
 deleting code inside dashboard.py cannot silently remove a URL the browser calls
-or a key the page reads. Written BEFORE the dead-code deletion and the planned
-split into waku/ops/dash/, and it must stay green through both.
+or a key the page reads. Written BEFORE the dead-code deletion and the 1,695 ->
+~880 line split, and it stayed green through both without a single edit to the
+route lists — which is the whole point: the browser's contract never moved, only
+the code behind it.
+
+The handler list below is checked with getattr(dashboard, ...), so it also pins
+the re-exports. After the split, most handlers LIVE in arena / catalog /
+settings_api / browser_agent and are imported here. If one stops being reachable
+from `dashboard`, the router breaks and this fails.
 
 If you add a route or a payload key on purpose, update the list below in the
 same commit — that edit is the review signal that the public surface changed.

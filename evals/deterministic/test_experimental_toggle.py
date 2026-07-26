@@ -16,13 +16,13 @@ from waku.tools import build_registry
 
 
 def test_settings_exposes_the_flag_so_the_ui_can_render_a_toggle(monkeypatch):
-    from waku.ops import dashboard
+    from waku.ops import settings_api
 
     monkeypatch.delenv("WAKU_EXPERIMENTAL", raising=False)
-    assert dashboard.settings_info()["experimental"] is False
+    assert settings_api.settings_info()["experimental"] is False
 
     monkeypatch.setenv("WAKU_EXPERIMENTAL", "1")
-    info = dashboard.settings_info()
+    info = settings_api.settings_info()
     assert info["experimental"] is True
     # the UI needs to say "pi not installed" honestly rather than fail later
     assert "pi_installed" in info

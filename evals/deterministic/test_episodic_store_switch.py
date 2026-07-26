@@ -109,7 +109,7 @@ def test_factory_returns_notion_store_when_configured(monkeypatch, fake_notion):
 def test_apply_settings_rejects_unknown_episodic_store(monkeypatch, tmp_path):
     # chdir so a regression of the guard can't write into the real project .env
     monkeypatch.chdir(tmp_path)
-    from waku.ops.dashboard import apply_settings
+    from waku.ops.settings_api import apply_settings
 
     result = apply_settings({"provider": "anthropic", "episodic_store": "bogus"})
     assert "error" in result

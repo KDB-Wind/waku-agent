@@ -65,12 +65,12 @@ def test_dashboard_pricing_covers_every_provider(name):
 def test_model_listing_falls_back_without_a_catalog(name, monkeypatch):
     """Providers with no listable catalog still give the picker their defaults
     (and never make a network call to get them)."""
-    from waku.ops import dashboard
+    from waku.ops import catalog
 
     monkeypatch.setenv("WAKU_PROVIDER", name)
     monkeypatch.delenv("WAKU_MODEL", raising=False)
     monkeypatch.delenv("WAKU_SMALL_MODEL", raising=False)
-    result = dashboard.list_models()
+    result = catalog.list_models()
     assert result["listed"] is False
     ids = [m["id"] for m in result["models"]]
     assert PROVIDERS[name].model in ids
@@ -85,13 +85,13 @@ def test_bad_key_gives_a_fixable_error_not_a_codec_crash(monkeypatch):
     fixable message AND still offer the flagship so opus-4.8/fable-5 aren't lost.
     (Regression: a cloned repo whose ANTHROPIC_API_KEY had a '→' dropped the
     picker to two defaults with a 'latin-1 codec' error.)"""
-    from waku.ops import dashboard
+    from waku.ops import catalog
 
     monkeypatch.setenv("WAKU_PROVIDER", "anthropic")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-" + "x" * 100 + "→bad")
     monkeypatch.delenv("WAKU_MODEL", raising=False)
-    dashboard._models_cache.clear()
-    result = dashboard.list_models("anthropic")
+    catalog._models_cache.clear()
+    result = catalog.list_models("anthropic")
     assert result["listed"] is False
     assert "ANTHROPIC_API_KEY" in result["error"] and "non-ASCII" in result["error"]
     assert "claude-opus-4-8" in [m["id"] for m in result["models"]]
@@ -105,7 +105,7 @@ def test_catalog_url_is_used_with_both_auth_styles(monkeypatch):
     import json
     import urllib.request
 
-    from waku.ops import dashboard
+    from waku.ops import catalog
 
     captured = {}
 
@@ -123,15 +123,15 @@ def test_catalog_url_is_used_with_both_auth_styles(monkeypatch):
     monkeypatch.setenv("MOONSHOT_API_KEY", "fake-key-for-tests")
     monkeypatch.delenv("WAKU_MODEL", raising=False)
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
-    dashboard._models_cache.clear()
+    catalog._models_cache.clear()
 
-    result = dashboard.list_models()
+    result = catalog.list_models()
     assert captured["url"] == PROVIDERS["kimi"].catalog_url
     assert captured["headers"]["authorization"] == "Bearer fake-key-for-tests"
     assert captured["headers"]["x-api-key"] == "fake-key-for-tests"
     assert result["listed"] is True
     assert "kimi-k3" in [m["id"] for m in result["models"]]
-    dashboard._models_cache.clear()
+    catalog._models_cache.clear()
 
 
 def test_price_for_layers_model_over_provider():
