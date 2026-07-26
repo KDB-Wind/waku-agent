@@ -54,7 +54,7 @@ def test_unknown_provider_names_the_choices():
 
 @pytest.mark.parametrize("name", list(PROVIDERS))
 def test_dashboard_pricing_covers_every_provider(name):
-    from waku.ops.dashboard import PRICING
+    from waku.ops.pricing import PRICING
 
     assert name in PRICING
 
@@ -138,7 +138,7 @@ def test_price_for_layers_model_over_provider():
     """Receipts correctness: a kimi-k3 run must be priced at K3's $3/$15, not
     the kimi provider's K2.7 rate — and unknown models still fall back to the
     provider estimate. (Live-catalog and :free paths are covered above.)"""
-    from waku.ops.dashboard import MODEL_PRICING, PRICING, price_for
+    from waku.ops.pricing import MODEL_PRICING, PRICING, price_for
 
     assert price_for("kimi", "kimi-k3") == MODEL_PRICING["kimi-k3"] == (3.0, 15.0)
     assert price_for("kimi", "kimi-k2.7") == (0.95, 4.0)
@@ -164,7 +164,7 @@ def test_every_priced_model_has_a_knowledge_cutoff():
     means someone added a model without deciding, which is what this catches."""
     import re
 
-    from waku.ops.dashboard import MODEL_CUTOFF, MODEL_PRICING, cutoff_for
+    from waku.ops.pricing import MODEL_CUTOFF, MODEL_PRICING, cutoff_for
 
     missing = set(MODEL_PRICING) - set(MODEL_CUTOFF)
     assert not missing, f"models priced but missing a MODEL_CUTOFF entry: {sorted(missing)}"
