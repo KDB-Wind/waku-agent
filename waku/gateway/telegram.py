@@ -3,8 +3,11 @@
 Setup (2 minutes, free):
   1. In Telegram, message @BotFather → /newbot → copy the token
   2. Put TELEGRAM_BOT_TOKEN=... in .env
-  3. Optionally set TELEGRAM_ALLOWED_USER=<your numeric id> (message
-     @userinfobot to get it) so ONLY you can talk to your Waku
+  3. Set TELEGRAM_ALLOWED_USER=<your numeric id> (message @userinfobot to get
+     it) so ONLY you can talk to your Waku. Comma-separate for several people.
+     LEAVING THIS UNSET MEANS ANYONE WHO FINDS YOUR BOT CAN USE IT — and this
+     bot answers out of YOUR memory, with YOUR tools, on YOUR API key. The
+     startup banner tells you which posture you are in; read it.
   4. make telegram
 
 Long-polling: your laptop calls Telegram's API — no public URL, no webhook,
@@ -20,9 +23,30 @@ from waku.app import Waku
 from waku.gateway.cli import _observer  # mirror gate/tool activity on the laptop terminal
 
 
-def _build_app(token: str, allowed: str):
+def _allowed_ids() -> set[str]:
+    """Parse TELEGRAM_ALLOWED_USER into a set. Empty means no restriction —
+    which is why `posture()` says so out loud on every start."""
+    return {p.strip() for p in os.getenv("TELEGRAM_ALLOWED_USER", "").split(",") if p.strip()}
+
+
+def posture() -> str:
+    """Who can reach this bot, printed at startup. A silent default is how an
+    assistant ends up serving strangers without its owner noticing."""
+    ids = _allowed_ids()
+    if ids:
+        return f"  reachable by: {len(ids)} allowlisted user(s)"
+    return ("  reachable by: ANYONE who finds this bot — it will answer from your\n"
+            "                personal memory. Set TELEGRAM_ALLOWED_USER to lock it.")
+
+
+def _build_app(token: str, allowed: str = ""):
     """Build the polling app + message handler. Shared by the standalone
-    gateway and the background poller `waku dashboard` starts."""
+    gateway and the background poller `waku dashboard` starts.
+
+    `allowed` is accepted for backwards compatibility; the allowlist is read
+    from the environment so a single id and a comma-separated list behave the
+    same way."""
+    allowed_ids = _allowed_ids() | ({allowed.strip()} if allowed.strip() else set())
     from telegram import Update
     from telegram.ext import Application, ContextTypes, MessageHandler, filters
 
@@ -30,7 +54,7 @@ def _build_app(token: str, allowed: str):
     waku.session.session_id = "telegram"   # its own conversation thread in the inbox
 
     async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if allowed and str(update.effective_user.id) != allowed:
+        if allowed_ids and str(update.effective_user.id) not in allowed_ids:
             await update.message.reply_text("This Waku serves someone else. Run your own!")
             return
         print(f"you › {update.message.text}")
@@ -54,8 +78,9 @@ def main() -> None:
     token = load_settings().telegram_token
     if not token:
         raise SystemExit("Set TELEGRAM_BOT_TOKEN in .env (message @BotFather to create a bot).")
-    app = _build_app(token, os.getenv("TELEGRAM_ALLOWED_USER", ""))
+    app = _build_app(token)
     print("Waku is listening on Telegram — message your bot. Ctrl-C to stop.")
+    print(posture())
     app.run_polling()
 
 
@@ -79,7 +104,8 @@ def start_in_background() -> bool:
     import asyncio
     import threading
 
-    allowed = os.getenv("TELEGRAM_ALLOWED_USER", "")
+    print("(telegram) starting:")
+    print(posture())
 
     import logging
 
@@ -106,7 +132,7 @@ def start_in_background() -> bool:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            app = _build_app(token, allowed)
+            app = _build_app(token)
             loop.run_until_complete(app.initialize())
             loop.run_until_complete(app.start())
             loop.run_until_complete(app.updater.start_polling(error_callback=on_poll_error))
