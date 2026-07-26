@@ -68,10 +68,10 @@ function toggleSessMenu(ev){
       <div><b>All messages</b> — full timeline</div>
       <div class="sm">every thread together, newest last</div></div>`;
   menu.innerHTML = allItem + (sessions.length ? sessions.map(s => {
-    const tags = (s.sources||[]).map(src => `<span class="gwtag ${esc(src)}">${esc(src)}</span>`).join("");
+    const tags = gwTags(s);
     return `<div class="sessitem ${s.id===SESSION?"on":""}" onclick="openConversation('${esc(s.id)}')">
       <div>${esc(s.title||s.id)} ${tags}</div>
-      <div class="sm">${s.messages} msg · ${esc((s.last_at||"").slice(0,16).replace("T"," "))}</div>
+      <div class="sm">${sessionMeta(s)}</div>
     </div>`;
   }).join("") : `<div class="sessitem">no past conversations yet</div>`);
   const r = ev.currentTarget.getBoundingClientRect();

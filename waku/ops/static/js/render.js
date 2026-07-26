@@ -68,7 +68,7 @@ const CHAT = [];
 function stagesRow(t, live){
   const gateCls = live ? (t.gate ? "done" : "on") : "done";
   const replyCls = live ? (t.stream ? "on" : "") : "done";
-  const tools = (t.tools||[]).map(x => `<span class="stage done">tool · ${esc(x.tool)}</span>`).join("");
+  const tools = (t.tools||[]).map(x => toolChip(x.tool)).join("");
   return `<div class="stages${live?"":" tele"}">`
     + `<span class="stage ${gateCls}">gate${t.gate?` · ${esc(t.gate.decision)}`:""}</span>`
     + tools + `<span class="stage ${replyCls}">reply</span></div>`;

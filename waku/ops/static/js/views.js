@@ -215,12 +215,12 @@ const VIEWS = {
     if (!sessions.length)
       return h + `<div class="card empty">no conversations yet — say something in the chat dock &rarr;</div>`;
     h += sessions.map(s => {
-      const tags = (s.sources||[]).map(src => `<span class="gwtag ${esc(src)}">${esc(src)}</span>`).join("");
+      const tags = gwTags(s);
       const on = s.id === SESSION;
       return `<div class="toolcard" style="cursor:pointer${on?';border-color:var(--accent)':''}" onclick="openConversation('${esc(s.id)}')">
         <div class="tn" style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
           <span>${esc(s.title||s.id)} ${tags}</span>
-          <span class="meta" style="font-weight:400;white-space:nowrap">${s.messages} msg · ${esc((s.last_at||"").slice(0,16).replace("T"," "))}</span></div>
+          <span class="meta" style="font-weight:400;white-space:nowrap">${sessionMeta(s)}</span></div>
         <div class="td">${esc(s.last||"")}</div></div>`;
     }).join("");
     return h;

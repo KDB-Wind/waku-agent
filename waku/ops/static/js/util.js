@@ -63,3 +63,29 @@ const reveal = (path, label) => `<a class="reveal" onclick="revealFile('${path}'
 // in-progress edit isn't wiped (same idea as the animation guard).
 let editing = false;
 async function postJSON(url, body){ return (await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})).json(); }
+
+// --- Shared row atoms.
+//
+// Deliberately three tiny FRAGMENTS, not one big sessionRow()/pinnedRow().
+// The session inbox (views.js) and the dock's thread menu (dock.js) draw
+// genuinely different things — a card in a tab versus an item in a dropdown —
+// so a shared row component would need a parameter for every difference and
+// would be worse than the duplication. What they actually share is these three
+// facts about a session, and those are the parts that drift: add a gateway and
+// the tag strip changes in two places; change the date format and the meta line
+// changes in two places. That has already happened once in this repo.
+
+// The channel tags on a conversation (web / telegram / voice / cli / discord).
+const gwTags = s => (s.sources||[]).map(src =>
+  `<span class="gwtag ${esc(src)}">${esc(src)}</span>`).join("");
+
+// "12 msg · 2026-07-26 21:56" — a session's size and when it last moved.
+const sessionMeta = s =>
+  `${s.messages} msg · ${esc((s.last_at||"").slice(0,16).replace("T"," "))}`;
+
+// One tool in a stage strip. Shared by the chat dock's harness strip
+// (render.js) and the arena's per-card strip (compare.js) — those two strips
+// are otherwise different on purpose (the arena has no gate/reply stage and
+// wraps), but the chip itself must look identical in both or the same tool
+// call appears to be two different things.
+const toolChip = name => `<span class="stage done">tool · ${esc(name)}</span>`;

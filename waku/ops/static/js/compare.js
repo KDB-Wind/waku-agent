@@ -301,7 +301,7 @@ function compareCol(res){
   }
   const tools = (res.tools||[]).map(t => t.tool === "delegate_task"
     ? `<span class="stage done subagent" title="the loop spawned a pi sub-agent on ${esc(res.model)} to write &amp; run the code">delegate_task → pi · ${esc(res.model)}</span>`
-    : `<span class="stage done">tool · ${esc(t.tool)}</span>`).join("");
+    : toolChip(t.tool)).join("");
   const gateBadgeHtml = `<span class="badge ${res.gate&&res.gate.decision==="retrieve"?"retrieve":""}">gate · ${esc(res.gate?res.gate.decision:"…")}</span>`;
   if (res.streaming){
     return `<div class="cmp-col">
