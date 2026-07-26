@@ -369,11 +369,17 @@ The local SQLite database and `calendar.ics` stay authoritative. To also write
 
 ```bash
 pip install -e '.[gcal]'
+# Keep the downloaded client file OUTSIDE the repo — it is only an input to
+# gcloud, which stores the resulting credentials in ~/.config/gcloud/.
 gcloud auth application-default login \
-  --client-id-file=credentials.json \
+  --client-id-file=~/.config/waku/gcal-client.json \
   --scopes=https://www.googleapis.com/auth/calendar.events
 WAKU_GOOGLE_CALENDAR=1 waku
 ```
+
+Nothing secret ever needs to live in the repo: the client file is read once by
+`gcloud`, and the credentials it mints land in `~/.config/gcloud/`. (`.gitignore`
+also blocks `credentials.json` and `*token*.json` as a second line of defence.)
 
 The target defaults to the signed-in user's `primary` calendar; set
 `WAKU_GOOGLE_CALENDAR_ID` for another calendar. `list_events` still reads the

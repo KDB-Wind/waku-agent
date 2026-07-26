@@ -16,3 +16,11 @@ dist/
 
 # Delegated coding deliverables (dated run folders + auto-run logs)
 waku_workspace/
+
+# Google OAuth: the client file you download from Cloud Console, and any token
+# it produces. Nothing here should ever be committed — belt and braces, because
+# the docs used to tell people to drop credentials.json in the repo root.
+credentials.json
+client_secret*.json
+*token*.json
+.gcp/
