@@ -15,7 +15,7 @@ Built for [Sean's AI Stories](https://www.youtube.com/@SeanAIStories).
 
 ![waku-agent architecture — the whiteboard](docs/architecture-whiteboard.png)
 
-> The system-design whiteboard from [Sean's AI Stories](https://www.youtube.com/@SeanAIStories).
+> The system-design whiteboard from the series.
 > Every box maps to a file — see [the whiteboard maps to the code](#the-whiteboard-maps-to-the-code).
 
 **▶ [Watch the 20-min code walkthrough](https://www.youtube.com/watch?v=rvRyBhILrls&list=PLE9hy4A7ZTmpGq7GHf5tgGFWh2277AeDR&index=42)** — the loop, the memory pillars, the evals, the Telegram gateway and the "Waku Waku" wake word, live.
@@ -147,7 +147,7 @@ flowchart LR
   classDef wm fill:none,stroke:none,color:#9aa0aa,font-size:11px;
 ```
 
-> _Architecture of **waku-agent** — built on [Sean's AI Stories](https://www.youtube.com/@SeanAIStories)
+> _Architecture of **waku-agent** — built on the series
 > ([@ShenSeanChen](https://github.com/ShenSeanChen)). Code is MIT; **this diagram is licensed CC BY-NC-SA 4.0** —
 > reuse it with credit to the channel, not for commercial resale._
 
