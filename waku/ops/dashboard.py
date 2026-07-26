@@ -128,32 +128,23 @@ def _maybe_rotate_session(agent) -> None:
 
 
 def chat(message: str) -> dict:
-    """Run one real turn through the harness and return the structured result —
-    gate decision, tool calls, reply, latency — so the browser can render the
-    pipeline as it happened. Writes traces + memory like any other gateway."""
-    events: list[dict] = []
-    with _agent_lock:
-        agent = _get_agent()
-        _maybe_rotate_session(agent)
-        start = datetime.now(UTC)
-        result = agent.respond(message, observer=lambda kind, ev: events.append({"kind": kind, **ev}),
-                               source="dashboard")
-        latency_ms = int((datetime.now(UTC) - start).total_seconds() * 1000)
+    """One turn, one JSON result — the non-streaming door to the same room.
 
-    gate = next((e for e in events if e["kind"] == "gate"), None)
-    cons = next((e for e in events if e["kind"] == "consolidation"), None)
-    return {
-        "reply": result.reply,
-        "gate": {"decision": gate["decision"], "reason": gate.get("reason")} if gate else None,
-        "tools": [
-            {"tool": c["tool"], "args": c["args"], "output": c["output"],
-             "status": _tool_status(c["output"]), "summary": (c["output"] or "").split(". ")[0][:120]}
-            for c in result.tool_calls
-        ],
-        "consolidation": {"new_facts": cons["new_facts"]} if cons else None,
-        "iterations": result.iterations,
-        "latency_ms": latency_ms,
-    }
+    The dashboard itself uses /api/chat/stream; this exists for scripts and for
+    `curl`. It deliberately does NOT reimplement the turn: it drives chat_stream
+    and keeps the final "done" payload, because the two used to be separate
+    copies of the same 25 lines and had already drifted (the streaming one
+    reported which model answered, this one didn't). One implementation means
+    they cannot disagree again.
+    """
+    final: dict = {}
+
+    def collect_done(kind: str, ev: dict) -> None:
+        if kind == "done":
+            final.update(ev)
+
+    chat_stream(message, collect_done)
+    return final
 
 
 def chat_stream(message: str, emit) -> None:
@@ -188,72 +179,6 @@ def chat_stream(message: str, emit) -> None:
         "latency_ms": latency_ms,
         "model": agent.settings.model,   # which brain answered — shown per card
     })
-
-
-def _compare_one(message: str, spec: str) -> dict:
-    """Run ONE message through ONE model in a throwaway temp home (same isolation
-    as `make shootout`, so it never touches your real memory/calendar), and
-    return its receipts — reply, gate, tools, latency, tokens, cost. A broken
-    contestant returns an {error} dict; it never raises."""
-    import tempfile
-    import time
-
-    from waku.app import Waku
-    from waku.config import Settings
-
-    provider, _, model = spec.partition(":")
-    home = Path(tempfile.mkdtemp(prefix=f"compare-{provider}-"))
-    gate: dict = {}
-    try:
-        settings = Settings(
-            provider=provider,
-            model=model,
-            small_model="",
-            home=home,
-            apple_calendar=False,
-            google_calendar=False,
-        )
-        app = Waku(settings=settings)
-        t0 = time.perf_counter()
-        result = app.respond(message, source="compare",
-                             observer=lambda k, ev: gate.update(
-                                 decision=ev.get("decision"), reason=ev.get("reason"))
-                             if k == "gate" else None)
-        ms = int((time.perf_counter() - t0) * 1000)
-        tin = tout = 0
-        ledger = home / "usage.jsonl"
-        if ledger.exists():
-            for line in ledger.read_text(encoding="utf-8").splitlines():
-                try:
-                    r = json.loads(line)
-                    tin, tout = tin + r.get("in", 0), tout + r.get("out", 0)
-                except json.JSONDecodeError:
-                    pass
-        pin, pout = price_for(provider, settings.model)
-        return {"spec": spec, "provider": provider, "model": settings.model, "reply": result.reply,
-                "gate": (gate or None), "iterations": result.iterations, "latency_ms": ms,
-                "tools": [{"tool": c["tool"]} for c in result.tool_calls],
-                "tokens_in": tin, "tokens_out": tout,
-                "cost_usd": round(tin / 1e6 * pin + tout / 1e6 * pout, 4),
-                "cutoff": cutoff_for(settings.model)}
-    except (Exception, SystemExit) as exc:   # a broken contestant (incl. a missing
-        # key, which get_client raises as SystemExit) fails alone, not the whole race
-        return {"spec": spec, "provider": provider, "model": model, "error": str(exc)[:200]}
-
-
-def compare_models(payload: dict) -> dict:
-    """Race ONE message through several models AT ONCE (parallel threads) and
-    return every result together. Non-streaming; the dashboard uses the SSE
-    version so columns fill in as each finishes."""
-    from concurrent.futures import ThreadPoolExecutor
-
-    message = (payload.get("message") or "").strip()
-    specs = payload.get("models") or []
-    if not message or not specs:
-        return {"error": "message and models required"}
-    with ThreadPoolExecutor(max_workers=min(len(specs), 6)) as ex:
-        results = list(ex.map(lambda s: _compare_one(message, s), specs))
-    return {"ok": True, "message": message, "results": results}
 
 
 def compare_stream(message: str, specs: list, emit, judge: bool = False,
@@ -1664,7 +1589,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         routes = {"/api/chat": None, "/api/memory": memory_action, "/api/settings": apply_settings,
                   "/api/query": run_query, "/api/session": session_action, "/api/pin": pin_action,
-                  "/api/compare": compare_models, "/api/compare/clear": compare_clear,
+                  "/api/compare/clear": compare_clear,
                   "/api/compare/regrade": compare_regrade, "/api/compare/delete_run": compare_delete_run}
         if self.path not in routes:
             self.send_response(404)
