@@ -134,7 +134,7 @@ def rebuild() -> str | None:
     The global is rebound here rather than by the caller: this module owns it,
     and a `global` statement in someone else's file is how two writers end up
     disagreeing about which agent is live."""
-    global _agent
+    global _agent, _dashboard_session
     with agent_lock:
         old = _agent
         try:
@@ -143,7 +143,17 @@ def rebuild() -> str | None:
             settings = load_settings()
             settings.ensure_home()
             conn = connect(settings.home, check_same_thread=False)
-            _agent = Waku(settings=settings, conn=conn)
+            fresh = Waku(settings=settings, conn=conn)
+            # Carry the CONVERSATION across the swap. A settings change swaps the
+            # brain, not the thread — but a brand-new Waku starts on the eternal
+            # 'default' session, so without this line switching provider silently
+            # dumped you into a different chat and your history vanished from the
+            # dock. Same resolution get_agent() uses, so both doors agree.
+            fresh.session.session_id = (
+                old.session.session_id if old is not None else resume_or_new_session(conn)
+            )
+            _dashboard_session = fresh.session.session_id
+            _agent = fresh
         except (Exception, SystemExit) as exc:   # get_client raises SystemExit
             _agent = old
             return str(exc)
