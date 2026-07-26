@@ -500,8 +500,13 @@ The point of a teaching repo is a readable core; these come alive one at a time,
 ## Community
 
 Star the repo, join the [Discord](https://discord.gg/7Ntxzm3eJ), and grab a
-[good first issue](docs/good-first-issues.md) — gateway adapters (WhatsApp, Discord),
-memory backends, and community skills are all designed to be first PRs.
+[good first issue](https://github.com/ShenSeanChen/waku-agent/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+— that link is the live list, so it's always current. Gateways, memory backends and
+community skills are all shaped to be first PRs; the easiest needs no Python at all
+(see [contributing a skill](CONTRIBUTING.md)).
+
+**Comment on an issue before you start** and it gets assigned to you, so two people
+never build the same thing.
 
 MIT — see [LICENSE](LICENSE). Built by [@ShenSeanChen](https://github.com/ShenSeanChen)
 ([YouTube](https://www.youtube.com/@SeanAIStories) · [X](https://x.com/ShenSeanChen)).

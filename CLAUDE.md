@@ -42,6 +42,12 @@ for its own sake is not.
 - **No emojis** in any UI surface (dashboard, CLI output, README prose).
 - **No new dependencies without discussion** — the core is stdlib + anthropic/openai.
   Optional features go behind extras (`[voice]`, `[telegram]`, ...).
+- **Footprint ladder — where new capability goes.** Every registered tool ships in
+  every prompt, so the core stays narrow and capability lives at the edges. In order:
+  extend existing code → a skill (`SKILL.md`, no Python) → a CLI + README →
+  a tool behind an extra → a gateway (one file, text in/out only) →
+  **a new core tool, last resort**. Full version, with the "declined even when
+  well-built" list, in `CONTRIBUTING.md`.
 - **Scope**: scheduling is the flagship teaching task, but the project is growing toward a
   full assistant. New capabilities (providers, tools, gateways, integrations) are welcome
   when they're self-contained, tested, and keep the core legible. Reject only complexity
