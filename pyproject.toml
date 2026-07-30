@@ -39,6 +39,7 @@ gcal = [
     "google-api-python-client>=2.0",
     "google-auth>=2.0",
     "google-auth-httplib2>=0.2",
+    "google-auth-oauthlib>=1.0",
     "httplib2>=0.22",
     # The browser consent flow. Without it the only way in is `gcloud auth
     # application-default login`, which is a developer ritual, not a sign-in.
