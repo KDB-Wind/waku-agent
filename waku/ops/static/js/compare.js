@@ -440,10 +440,29 @@ function modelArenaView(d){
 // is a benchmark you have to take on faith, and the whole point of this one is
 // that the numbers are checkable.
 let memoryArenaFixture;   // undefined = not fetched, null = unavailable here
+let maFile = null, maTrack = null;   // chosen probe set; null = whatever loaded
+let maModel = null;                  // "provider:model"; null = cheapest offered
+function pickArenaModel(spec){ maModel = spec; render(); }
+function maModels(){ return (memoryArenaFixture && memoryArenaFixture.models) || []; }
+// Cheapest FIRST from the server, so "no choice made" costs the least. The
+// arena holds the model constant and varies only the store, so the expensive
+// default was buying nothing: a measured dinner race cost ~$4.36 on fable-5
+// ($10/$50 per M) against ~$0.55 on grok-4.3 ($1.25/$2.50), same finding.
+function maModelSpec(){ const m = maModels(); return maModel || (m[0] && m[0].spec) || ""; }
+
+async function pickProbeFile(id){
+  maFile = id;
+  maTrack = (id.split("::")[1]) || null;   // the id carries its own track
+  maPicked = null;
+  memoryArenaFixture = undefined;   // refetch so the questions match the choice
+  maRun = {running:false, rows:[], board:null, log:"", error:null};
+  editing = false; render();
+}
+function pickTrack(name){ maTrack = name; editing = false; render(); }
 
 async function loadMemoryArena(){
   try {
-    const r = await fetch("/api/memory-arena");
+    const r = await fetch("/api/memory-arena" + (maFile ? `?probes=${encodeURIComponent(maFile)}` : ""));
     const j = await r.json();
     memoryArenaFixture = j && j.available ? j : null;
   } catch { memoryArenaFixture = null; }
@@ -472,44 +491,290 @@ function probeRow(p){
     <td class="meta">${esc(p.note||"")}</td></tr>`;
 }
 
+// --- running it -------------------------------------------------------------
+let maRun = {running:false, rows:[], board:null, log:"", error:null};
+
+async function runMemoryArena(){
+  if (maRun.running) return;
+  const fx = memoryArenaFixture;
+  const track = (maTrack && fx.tracks[maTrack]) ? maTrack : Object.keys(fx.tracks)[0];
+  // Record the grid UP FRONT. Seeding is five real turns per contestant, so the
+  // first result is ~40s away — and a table built only from rows that have
+  // landed renders an empty header for that whole first minute, which reads as
+  // broken rather than busy. Columns and rows are both known before we start;
+  // only the cells are pending.
+  maRun = {running:true, rows:[], board:null, log:"seeding…", error:null,
+           backends: maPicks(), probes: fx.tracks[track].probes.map(p=>p.id),
+           seeded: {}};
+  editing = false; render();
+  try {
+    const res = await fetch("/api/memory-arena/stream", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({backends: maPicks(), track, probes: maFile || "",
+                            model: maModelSpec()})});
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = "";
+    for(;;){
+      const {done, value} = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, {stream:true});
+      const chunks = buf.split("\n\n"); buf = chunks.pop();
+      for (const c of chunks){
+        if (!c.startsWith("data: ")) continue;
+        const ev = JSON.parse(c.slice(6));
+        if (ev.kind === "start"){ maRun.log = `${ev.contestant}: seeding…`;
+                                  maRun.seeded[ev.contestant] = 0; }
+        if (ev.kind === "seeded"){ maRun.log = `${ev.contestant}: ${ev.line}`;
+                                   maRun.seeded[ev.contestant] = (maRun.seeded[ev.contestant]||0) + 1; }
+        if (ev.kind === "probe"){ maRun.rows.push(ev); maRun.log = `${ev.contestant}: ${ev.probe}`; }
+        if (ev.kind === "failed") maRun.error = `${ev.contestant} — ${ev.error}`;
+        if (ev.kind === "done"){ maRun.board = ev.scoreboard || null;
+                                 if (ev.error) maRun.error = ev.error; }
+        editing = false; render();
+      }
+    }
+  } catch(e){ maRun.error = String(e); }
+  maRun.running = false; maRun.log = ""; editing = false; render();
+}
+
+// Which stores to race — asked of the SERVER, not decided here.
+// This used to be a hardcoded ["mem0", "supabase"] filtered against the
+// connections list, written before Zep and LangMem existed. Both were
+// configured, both were silently dropped from every race, and the button
+// cheerfully said "Race 2 stores" as though that were the whole field. A list
+// of backends maintained in two languages drifts the moment one is added;
+// waku/ops/memory_arena.py::_available_backends is now the only one.
+function maBackends(){
+  return (memoryArenaFixture && memoryArenaFixture.backends) || ["sqlite"];
+}
+
+// Which of them actually race. Zep starts UNCHECKED: it waits for graph
+// ingestion on every write, which took 16 minutes for ten operations against a
+// live account. Racing it by default turned a four-minute experiment into a
+// forty-minute one and made the whole tab feel broken. It is one click away,
+// deliberately, rather than one click away from being avoided.
+const MA_SLOW = {zep: "waits for graph ingestion — minutes per fact"};
+let maPicked = null;
+
+function maPickedSet(){
+  if (maPicked === null) maPicked = new Set(maBackends().filter(k => !MA_SLOW[k]));
+  return maPicked;
+}
+function maTogglePick(key){
+  const s = maPickedSet();
+  s.has(key) ? s.delete(key) : s.add(key);
+  editing = false; render();
+}
+function maPicks(){
+  return maBackends().filter(k => maPickedSet().has(k));
+}
+
+
+function maProbe(id){
+  const tracks = (memoryArenaFixture && memoryArenaFixture.tracks) || {};
+  for (const t of Object.values(tracks)){
+    const hit = (t.probes || []).find(p => p.id === id);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+const OUTCOME_CELL = (r) => `<span class="ma-o ma-${r.outcome}" title="${esc(r.why||"")}">${r.outcome}</span>`;
+
+function maResultsHtml(){
+  if (!maRun.rows.length && !maRun.running && !maRun.error) return "";
+  // The grid comes from what was ASKED, not from what has answered — so every
+  // column and row is on screen from the first second, and each cell says
+  // whether it is seeding, queued, or done. An empty table under a "running"
+  // heading is indistinguishable from a broken one.
+  const seedTotal = (memoryArenaFixture && memoryArenaFixture.tracks
+    ? (Object.values(memoryArenaFixture.tracks)[0].seed || []).length : 0);
+  const names = maRun.backends || [...new Set(maRun.rows.map(r => r.contestant))];
+  const probes = maRun.probes || [...new Set(maRun.rows.map(r => r.probe))];
+  const cell = (p, n) => {
+    const r = maRun.rows.find(x => x.probe === p && x.contestant === n);
+    if (r) return `<td>${OUTCOME_CELL(r)}
+      <div class="ma-facts-meta">${(r.ms/1000).toFixed(1)}s &middot; ${r.tokens} tok${
+        r.calls ? " in " + r.calls + (r.calls === 1 ? " call" : " calls") : ""} &middot; ${
+        r.retrieved === true ? "searched memory" : r.retrieved === false ? "no lookup" : "gate unknown"}</div>
+      <div class="ma-ans">${esc((r.answer||"").slice(0,140))}</div></td>`;
+    if (!maRun.running) return `<td class="meta">—</td>`;
+    const seeded = (maRun.seeded || {})[n];
+    if (seeded === undefined) return `<td class="meta">queued</td>`;
+    if (seeded < seedTotal) return `<td class="meta">seeding ${seeded}/${seedTotal}<span class="caret"></span></td>`;
+    return `<td class="meta">asking<span class="caret"></span></td>`;
+  };
+  const board = maRun.board ? `<div class="card" style="padding:4px 8px"><div class="tablescroll"><table>
+      <tr><th>store</th><th>pass</th><th>stale</th><th>invented</th><th>miss</th><th>tokens</th></tr>
+      ${maRun.board.map(b=>`<tr><td><code>${esc(b.contestant)}</code></td>
+        <td>${b.pass}</td><td>${b.stale}</td><td>${b.invented}</td><td>${b.miss}</td>
+        <td class="meta">${b.tokens}</td></tr>`).join("")}
+    </table></div></div>` : "";
+  return `<h2 style="margin-top:22px">Results${maRun.running?' <span class="meta" style="font-weight:400">— running…</span>':""}</h2>
+    ${maRun.error?`<div class="card" style="color:var(--bad)">${esc(maRun.error)}</div>`:""}
+    ${board}
+    <div class="card" style="padding:4px 8px"><div class="tablescroll"><table>
+      <tr><th>probe</th>${names.map(n=>`<th>${esc(n)}</th>`).join("")}</tr>
+      ${probes.map(p=>{
+        const any = maRun.rows.find(x => x.probe === p);
+        const fx = maProbe(p);
+        return `<tr>
+          <td><span class="ma-test">${esc((any && any.test) || (fx && fx.test) || "")}</span>
+            <div class="ma-q">${esc((any && any.question) || (fx && fx.question) || p)}</div>
+            <div class="ma-facts-meta">${fx ? (fx.expect_refusal
+                ? "must decline" : "wants: " + esc((fx.expect_any||[]).join(" / "))) : ""}${
+              fx && (fx.stale_any||[]).length ? " &middot; not: " + esc(fx.stale_any.join(" / ")) : ""}</div>
+          </td>${names.map(n=>cell(p,n)).join("")}</tr>`;}).join("")}
+    </table></div></div>`;
+}
+
+async function maSeeAll(store){
+  // Expand THIS store in place. Never navigate — the Memory page is sqlite's
+  // and sending mem0's "see all" there showed the wrong store's facts.
+  const cards = Array.isArray(maStores) ? maStores : null;   // "loading" is a string
+  const i = cards ? cards.findIndex(c => c.store === store) : -1;
+  if (i < 0) return;
+  cards[i] = Object.assign({}, cards[i], {loading: true}); render();
+  try {
+    const r = await fetch(`/api/memory-arena/stores?store=${encodeURIComponent(store)}`);
+    const full = (await r.json())[0];
+    if (full) cards[i] = full;
+  } catch (e){ cards[i].error = String(e); }
+  cards[i].loading = false; render();
+}
+
 function memoryArenaView(){
   if (memoryArenaFixture === undefined){
     setTimeout(loadMemoryArena, 0);
-    return `<div class="card empty">loading the fixture…</div>`;
+    return `<div class="card empty">loading…</div>`;
   }
   if (memoryArenaFixture === null){
-    return `<div class="card empty">The bake-off fixture lives in <code>evals/memory_arena.json</code>,
+    return `<div class="card empty">The probe file lives in <code>evals/memory_arena.json</code>,
       which a packaged install does not ship. Run Waku from a clone to see it.</div>`;
   }
-  const tracks = Object.entries(memoryArenaFixture.tracks).map(([key, t]) => `
-    <h2 style="margin-top:22px">${esc(t.label)}
-      <span class="meta" style="font-weight:400">— ${t.probes.length} probes</span></h2>
-    <div class="card">
-      <div class="meta" style="margin-bottom:8px">Seeded conversationally, in this order — the same
-        sentences a user would type. Handing each backend a pre-extracted fact list would skip the
-        extraction step that is half of what some of them sell.</div>
-      <ol class="ma-seed">${t.seed.map(s=>`<li>${esc(s)}</li>`).join("")}</ol>
+  const track = memoryArenaFixture.tracks[(maTrack && memoryArenaFixture.tracks[maTrack])
+    ? maTrack : Object.keys(memoryArenaFixture.tracks)[0]];
+  const picks = maPicks();
+  const chips = maBackends().map(k => {
+    const on = maPickedSet().has(k);
+    return `<label class="cmp-pick ${on?"on":""}" ${MA_SLOW[k]?`title="${esc(MA_SLOW[k])}"`:""}>
+      <input type="checkbox" ${on?"checked":""} onchange="maTogglePick('${esc(k)}')"> ${esc(k)}${
+      MA_SLOW[k] ? ' <span class="meta">slow</span>' : ""}</label>`;
+  }).join("");
+  // ONE dropdown. A file is a container, not a choice — picking "which file"
+  // and then "which track inside it" made you answer one question twice, and
+  // the filename told you less than the track label already did.
+  const sets = (memoryArenaFixture.sets || []);
+  const chosen = maFile || memoryArenaFixture.chosen || (sets[0] && sets[0].id);
+  const picker = `<div class="ma-race" style="margin-bottom:10px">
+      <label class="fld" style="margin:0">Questions
+        <select onchange="pickProbeFile(this.value)">
+          ${sets.map(s=>`<option value="${esc(s.id)}" ${s.id===chosen?"selected":""}>${
+            esc(s.label)} — ${s.facts} facts, ${s.probes} questions</option>`).join("")}
+        </select></label>
+      ${maModels().length ? `<label class="fld" style="margin:0">Model
+        <select onchange="pickArenaModel(this.value)">
+          ${maModels().map(m=>`<option value="${esc(m.spec)}" ${
+            m.spec===maModelSpec()?"selected":""}>${esc(m.spec)} — $${m.price_in}/$${m.price_out} per M</option>`).join("")}
+        </select></label>` : ""}
+      <span class="meta">Drop a JSON file in <code>.waku/probes/</code> to add more.</span>
+    </div>`;
+  const race = `<div class="card">
+    ${picker}
+    <div class="ma-race">
+      <button class="save" onclick="runMemoryArena()" ${maRun.running||!picks.length?"disabled":""}>
+        ${maRun.running ? "Racing…" : `Race ${picks.length} store${picks.length===1?"":"s"}`}</button>
+      <span class="meta">${maRun.running ? esc(maRun.log)
+        : `Tells each store the same facts, asks the same questions, scores the answers.
+           Every store runs in its own throwaway copy — your real memory is never touched.`}</span>
     </div>
-    <div class="card" style="padding:4px 8px"><div class="tablescroll"><table>
-      <tr><th>test</th><th>question</th><th>expects</th><th>must not say</th><th>why</th></tr>
-      ${t.probes.map(probeRow).join("")}
-    </table></div></div>`).join("");
-
-  return `<div class="card">
-    <div class="meta">One agent, one model, one loop — only the memory backend changes. Four tests:
-      <b>recall</b> (can it get the fact back), <b>update</b> (does the newest fact win),
-      <b>restraint</b> (does it invent things it was never told), <b>reasoning</b> (can it combine two).
-      Scored by <code>waku/ops/memory_arena.py</code>; tokens counted on every probe.</div>
-    <div class="ma-legend">${OUTCOME_HELP.map(([k,v])=>
-      `<div><span class="ma-o ma-${k}">${k}</span> <span class="meta">${esc(v)}</span></div>`).join("")}</div>
-    <div class="ma-source">${memoryArenaFixture.is_example
-      ? `Scoring the shipped <b>example</b> probes — four dull questions that document the format.
-         Point <code>WAKU_MEMORY_PROBES</code> at your own file to score something you care about.`
-      : `Probes: <code>${esc(memoryArenaFixture.source)}</code>`}</div>
-    <div class="meta" style="margin-top:10px">No runs yet — the runner needs the Mem0 / Zep / LangMem
-      adapters, which are not wired up. Everything below is what they will be asked.</div>
-  </div>${tracks}`;
+    <div class="cmp-picks">${chips}</div></div>`;
+  return race + maResultsHtml() + maStoresHtml() + maAsksHtml(track);
 }
+
+// --- what each store is holding, right now ----------------------------------
+// This is the screen the tab should have opened with from the start: not an
+// essay about a benchmark, but the contents of every store you have connected.
+// Fetched on demand, never on the 5s poll.
+let maStores;   // undefined = not fetched, [] = fetched and empty
+
+async function loadMemoryStores(){
+  maStores = "loading";
+  editing = false; render();
+  try { maStores = await (await fetch("/api/memory-arena/stores")).json(); }
+  catch(e){ maStores = [{store:"?", error:String(e)}]; }
+  editing = false; render();
+}
+
+function maStoresHtml(){
+  const btn = `<button class="save ghost" onclick="loadMemoryStores()"
+    ${maStores === "loading" ? "disabled" : ""}>${maStores === "loading" ? "reading…" : "Read stores"}</button>`;
+  if (!Array.isArray(maStores)){
+    return `<div class="card"><div class="ma-race">${btn}
+      <span class="meta">Show what every connected memory store is holding right now.
+        Each one is a live call, so it only runs when you ask.</span></div></div>`;
+  }
+  const cards = maStores.map(s => `<div class="card ma-store">
+      <div class="ma-store-h"><code>${esc(s.store)}</code>
+        ${s.error ? `<span class="ma-o ma-invented">error</span>`
+                  : `<span class="meta">${s.count} fact${s.count===1?"":"s"}</span>`}</div>
+      <div class="ma-prov">${s.kind === "live"
+        ? `your live agent &middot; <code>.waku/state.db</code>`
+        : `connected account &middot; only what waku wrote`}${
+        s.span ? ` &middot; ${esc(s.span)}` : ""}</div>
+      ${s.error ? `<div class="ma-ans">${esc(s.error)}</div>`
+        : s.note ? `<div class="ma-ans">${esc(s.note)}</div>`
+        : (s.facts||[]).length
+          ? `<ul class="ma-facts">${s.facts.map(f=>`<li>${f.subject
+              ? `<b>${esc(f.subject)}</b> — ` : ""}${esc(f.content)}</li>`).join("")}</ul>${
+              s.count > s.facts.length
+                ? `<div class="meta" style="margin-top:6px">showing ${s.facts.length} of ${s.count}
+                     &middot; <a class="reveal" onclick="maSeeAll('${esc(s.store)}')">see all</a></div>`
+                : ""}`
+          : `<div class="meta">empty</div>`}
+    </div>`).join("");
+  // The warning matters more than the cards. A count next to a count invites
+  // "waku remembers more", when the only thing it shows is that one store has
+  // been lived in and the others were connected yesterday.
+  return `<h2>What each store is holding</h2>
+    <div class="card"><div class="ma-race">${btn}
+      <span class="meta">Live contents, read-only.</span></div>
+      <div class="ma-warn">These counts are <b>not</b> a comparison. sqlite is your real agent
+        with weeks of use behind it; the connected stores have only ever received what this
+        arena wrote to them. Read the dates, not the totals.</div></div>
+    <div class="ma-stores">${cards}</div>`;
+}
+
+// --- what they get asked ----------------------------------------------------
+// Trimmed hard. The full note on every probe was three lines of prose each and
+// buried the thing anyone actually wants: the question, and what counts as
+// right. Hover a row for the reasoning.
+function maAsksHtml(track){
+  return `<h2 style="margin-top:22px">What they get asked
+      <span class="meta" style="font-weight:400">— ${track.seed.length} facts in, ${track.probes.length} questions</span></h2>
+    <div class="card" style="padding:4px 8px"><div class="tablescroll"><table>
+      <tr><th>told</th></tr>
+      ${track.seed.map(s=>`<tr><td class="meta">${esc(s)}</td></tr>`).join("")}
+    </table></div></div>
+    <div class="card" style="padding:4px 8px"><div class="tablescroll"><table>
+      <tr><th>asked</th><th>right answer</th><th>wrong answer</th></tr>
+      ${track.probes.map(p=>`<tr title="${esc(p.note||"")}">
+        <td>${esc(p.question)}</td>
+        <td><span class="ma-expect">${p.expect_refusal ? "must decline"
+            : esc((p.expect_any||[]).join(" / "))}</span></td>
+        <td>${(p.stale_any||[]).length ? `<span class="ma-forbid">${esc(p.stale_any.join(" / "))}</span>`
+            : p.expect_refusal ? `<span class="ma-forbid">any specific answer</span>`
+            : '<span class="meta">—</span>'}</td></tr>`).join("")}
+    </table></div></div>
+    <div class="meta" style="margin-top:8px">${memoryArenaFixture.is_example
+      ? `Example probes. Point <code>WAKU_MEMORY_PROBES</code> at your own file.`
+      : `From <code>${esc(memoryArenaFixture.source)}</code>`}
+      &nbsp;·&nbsp; <span class="ma-o ma-pass">pass</span> right
+      <span class="ma-o ma-stale">stale</span> gave a superseded answer
+      <span class="ma-o ma-invented">invented</span> made it up
+      <span class="ma-o ma-miss">miss</span> said it did not know</div>`;
+}
+
 
 // The cumulative view under the current race: a per-model scoreboard averaged
 // across every logged race, then the list of recent races (click to reopen).

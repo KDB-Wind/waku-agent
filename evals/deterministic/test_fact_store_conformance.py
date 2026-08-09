@@ -54,7 +54,43 @@ def _supabase_store(tmp_path):
     return SupabaseFactStore(Settings(home=tmp_path))
 
 
-BACKENDS = {"sqlite": _sqlite_store, "supabase": _supabase_store}
+def _mem0_store(tmp_path):
+    """Opt-in only, same reasoning as Supabase: this one talks to a paid hosted
+    service and writes real memories into a real account. A maintainer running
+    the suite must not start filling somebody's Mem0 workspace with test facts
+    about Priya's meeting preferences."""
+    if os.getenv("WAKU_TEST_MEM0") != "1":
+        pytest.skip("set WAKU_TEST_MEM0=1 (plus MEM0_API_KEY) to include it")
+    from waku.config import Settings
+    from waku.memory.semantic.mem0_store import Mem0FactStore
+
+    return Mem0FactStore(Settings(home=tmp_path))
+
+
+def _zep_store(tmp_path):
+    if os.getenv("WAKU_TEST_ZEP") != "1":
+        pytest.skip("set WAKU_TEST_ZEP=1 (plus ZEP_API_KEY) to include it")
+    from waku.config import Settings
+    from waku.memory.semantic.zep_store import ZepFactStore
+
+    return ZepFactStore(Settings(home=tmp_path))
+
+
+def _langmem_store(tmp_path):
+    """Needs no account — LangMem is a toolkit, not a service — but semantic
+    search still bills OpenAI for embeddings, so it stays opt-in like the rest.
+    Without the index the store is a plain dict and the tests would pass while
+    measuring nothing."""
+    if os.getenv("WAKU_TEST_LANGMEM") != "1":
+        pytest.skip("set WAKU_TEST_LANGMEM=1 (plus OPENAI_API_KEY) to include it")
+    from waku.config import Settings
+    from waku.memory.semantic.langmem_store import LangMemFactStore
+
+    return LangMemFactStore(Settings(home=tmp_path))
+
+
+BACKENDS = {"sqlite": _sqlite_store, "supabase": _supabase_store, "mem0": _mem0_store,
+            "zep": _zep_store, "langmem": _langmem_store}
 
 
 @pytest.fixture(params=list(BACKENDS), ids=list(BACKENDS))
@@ -151,3 +187,48 @@ def test_every_method_on_the_contract_is_actually_exercised_here():
     untested = [m for m in _protocol_methods() if f"store.{m}(" not in body
                 and f'"{m}"' not in body]
     assert untested == [], f"FactStore methods with no test in this file: {untested}"
+
+
+# --- the blank-optional-field trap -------------------------------------------
+
+def test_a_blank_optional_field_falls_back_to_its_default(monkeypatch):
+    """The Connections form writes EVERY optional field it shows, so leaving one
+    blank stores NAME='' rather than omitting it — and os.getenv only applies a
+    default when the variable is MISSING.
+
+    Found the first time a real key was saved through the dashboard, which is the
+    only way to hit it: a hand-edited .env just leaves the line out. A blank
+    "Settle seconds" box made float("") raise on every Zep call, and a blank
+    "User id" would have silently scoped the graph to "" instead of "waku" —
+    which is the worse half, because nothing would have errored.
+    """
+    from waku.memory.semantic.base import env_or
+
+    monkeypatch.setenv("WAKU_TEST_BLANK", "")
+    assert env_or("WAKU_TEST_BLANK", "fallback") == "fallback"
+    assert float(env_or("WAKU_TEST_BLANK", "2.0")) == 2.0
+
+    monkeypatch.setenv("WAKU_TEST_BLANK", "   ")
+    assert env_or("WAKU_TEST_BLANK", "fallback") == "fallback", "whitespace is blank too"
+
+    monkeypatch.setenv("WAKU_TEST_BLANK", "real")
+    assert env_or("WAKU_TEST_BLANK", "fallback") == "real"
+
+    monkeypatch.delenv("WAKU_TEST_BLANK")
+    assert env_or("WAKU_TEST_BLANK", "fallback") == "fallback"
+
+
+def test_no_backend_reads_an_optional_setting_with_bare_os_getenv():
+    """os.getenv(name, default) is the wrong tool for anything the Connections
+    form can write blank. Required fields are fine — those use os.environ[...]
+    and should raise loudly when absent."""
+    import re
+    from pathlib import Path
+
+    semantic = Path(__file__).resolve().parents[2] / "waku" / "memory" / "semantic"
+    offenders = []
+    for path in semantic.glob("*_store.py"):
+        for num, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if re.search(r'os\.getenv\(\s*["\'][A-Z_]+["\']\s*,\s*["\'][^"\']+["\']', line):
+                offenders.append(f"{path.name}:{num}")
+    assert offenders == [], f"use env_or() — a blank form field defeats these: {offenders}"

@@ -195,3 +195,168 @@ def test_probes_can_be_pointed_somewhere_else(monkeypatch, tmp_path):
     assert list(fixture["tracks"]) == ["mine"]
     assert fixture["is_example"] is False, "a caller's own probes must not claim to be the example"
     assert fixture["source"] == str(mine), "the UI names the file it scored, so it cannot be a guess"
+
+
+def test_token_counting_reads_the_keys_the_ledger_actually_writes(tmp_path):
+    """This shipped broken and reported 0 tokens for every probe with no error:
+    _tokens() read "input_tokens"/"output_tokens" while usage.jsonl writes
+    "in"/"out", and `.get(name, 0)` turned the wrong name into a plausible
+    number. The line below is copied from a real ledger — if the writer's schema
+    ever moves, this fails instead of quietly costing nothing."""
+    (tmp_path / "usage.jsonl").write_text(
+        '{"ts": "2026-08-08T23:41:43.306+00:00", "provider": "anthropic", '
+        '"model": "claude-fable-5", "kind": "loop", "in": 3164, "out": 94}\n'
+        '{"ts": "2026-08-08T23:41:48.028+00:00", "provider": "anthropic", '
+        '"model": "claude-fable-5", "kind": "loop", "in": 3241, "out": 92}\n',
+        encoding="utf-8")
+
+    tokens, calls = arena._ledger(tmp_path)
+    assert tokens == 3164 + 94 + 3241 + 92
+    # One ROW is one API call. The grid reports this so "why did one question
+    # cost 4,783 tokens" is answered by a count, not by my inference.
+    assert calls == 2
+
+
+def test_the_arena_and_the_ledger_writer_agree_on_field_names():
+    """Pin the two halves together. _tokens() cannot be verified by its own
+    fixture alone — the fixture would just encode whatever mistake was made."""
+    import inspect
+
+    from waku.ops import tracing
+
+    writer = inspect.getsource(tracing)
+    assert 'usage.jsonl' in writer, "the ledger moved — find its new writer"
+    assert '"in":' in writer and '"out":' in writer, (
+        "the usage ledger no longer writes 'in'/'out' — _tokens() must follow it"
+    )
+
+
+def test_a_ledger_that_is_missing_is_zero_not_a_crash(tmp_path):
+    assert arena._ledger(tmp_path) == (0, 0)
+
+
+# --- the runner --------------------------------------------------------------
+# run_arena() spends real money, so it was only ever verified by running it and
+# looking — which is exactly the gap that let the token bug ship. These drive
+# the whole seed -> probe -> score path with a fake Waku: no model, no keys, no
+# network, and no spend.
+
+class _FakeWaku:
+    """Records what it was told, answers what the script says, and writes the
+    same usage.jsonl the real app does — so token accounting is exercised too."""
+
+    def __init__(self, settings=None, **kw):
+        self.settings = settings
+        self.seen: list[str] = []
+        self.home = settings.home
+        self.home.mkdir(parents=True, exist_ok=True)
+        self._answers = dict(_FakeWaku.script)
+
+    def respond(self, message, source="cli", observer=None, **kw):
+        from types import SimpleNamespace
+        self.seen.append(message)
+        # every turn costs something, so a per-probe delta is observable
+        with (self.home / "usage.jsonl").open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"in": 100, "out": 10}) + "\n")
+        if observer:
+            observer("gate", {"decision": _FakeWaku.gate})
+        return SimpleNamespace(reply=self._answers.get(message, "I don't know."))
+
+
+def _arena_fixture(tmp_path):
+    fx = {"tracks": {"t": {"label": "T",
+        "seed": ["fact one", "fact two"],
+        "probes": [
+            {"id": "p-recall", "test": "recall", "question": "q1?",
+             "expect_any": ["alpha"], "note": "n"},
+            {"id": "p-update", "test": "update", "question": "q2?",
+             "expect_any": ["new"], "stale_any": ["old"], "note": "n"},
+        ]}}}
+    return fx
+
+
+def _run(monkeypatch, tmp_path, script, gate=False, backends=("sqlite",)):
+    import waku.app
+    _FakeWaku.script = script
+    _FakeWaku.gate = gate
+    monkeypatch.setattr(waku.app, "Waku", _FakeWaku)
+    events = []
+    arena.run_arena(list(backends), "t", lambda k, e: events.append((k, e)),
+                    fixture=_arena_fixture(tmp_path))
+    return events
+
+
+def test_the_runner_seeds_every_line_then_asks_every_probe(monkeypatch, tmp_path):
+    events = _run(monkeypatch, tmp_path, {"q1?": "alpha", "q2?": "the new one"})
+    seeded = [e["line"] for k, e in events if k == "seeded"]
+    probes = [e["probe"] for k, e in events if k == "probe"]
+    assert seeded == ["fact one", "fact two"], "the conversation must go in, in order"
+    assert probes == ["p-recall", "p-update"]
+
+
+def test_the_runner_scores_what_came_back(monkeypatch, tmp_path):
+    events = _run(monkeypatch, tmp_path, {"q1?": "alpha", "q2?": "still the old one"})
+    outcomes = {e["probe"]: e["outcome"] for k, e in events if k == "probe"}
+    assert outcomes == {"p-recall": PASS, "p-update": STALE}
+
+
+def test_tokens_are_per_probe_not_a_running_total(monkeypatch, tmp_path):
+    """THE regression. The ledger is cumulative; storing the total on each row
+    made scoreboard() sum a triangular number and report several times the
+    tokens actually spent — wrong in a way that still looks plausible."""
+    events = _run(monkeypatch, tmp_path, {"q1?": "alpha", "q2?": "the new one"})
+    tokens = [e["tokens"] for k, e in events if k == "probe"]
+    assert tokens == [110, 110], f"each probe costs one turn, got {tokens}"
+
+
+def test_a_backend_that_blows_up_does_not_take_the_others_with_it(monkeypatch, tmp_path):
+    """A missing key or a service outage is a fact about that contestant, not a
+    reason to lose everyone else's results."""
+    import waku.app
+    _FakeWaku.script = {"q1?": "alpha", "q2?": "the new one"}
+    _FakeWaku.gate = False
+    real_init = _FakeWaku.__init__
+
+    def explode(self, settings=None, **kw):
+        if settings.semantic_store == "boom":
+            raise RuntimeError("no api key")
+        real_init(self, settings=settings, **kw)
+
+    monkeypatch.setattr(_FakeWaku, "__init__", explode)
+    monkeypatch.setattr(waku.app, "Waku", _FakeWaku)
+    events = []
+    arena.run_arena(["boom", "sqlite"], "t", lambda k, e: events.append((k, e)),
+                    fixture=_arena_fixture(tmp_path))
+
+    assert [e["contestant"] for k, e in events if k == "failed"] == ["boom"]
+    assert {e["contestant"] for k, e in events if k == "probe"} == {"sqlite"}
+    board = next(e for k, e in events if k == "done")["scoreboard"]
+    assert [row["contestant"] for row in board] == ["sqlite"]
+
+
+def test_the_gate_decision_reaches_the_scorer(monkeypatch, tmp_path):
+    """Only waku can be graded on 'did you search memory for arithmetic', and
+    that only works if the observer's gate event actually gets through."""
+    fx = _arena_fixture(tmp_path)
+    fx["tracks"]["t"]["probes"] = [{"id": "p-gate", "test": "restraint", "question": "q1?",
+                                    "expect_any": ["68"], "expect_retrieval": False, "note": "n"}]
+    import waku.app
+    _FakeWaku.script = {"q1?": "68"}
+    _FakeWaku.gate = True          # it retrieved when it should not have
+    monkeypatch.setattr(waku.app, "Waku", _FakeWaku)
+    events = []
+    arena.run_arena(["sqlite"], "t", lambda k, e: events.append((k, e)), fixture=fx)
+
+    row = next(e for k, e in events if k == "probe")
+    assert row["outcome"] == MISS, "retrieving for arithmetic must fail even with the right number"
+
+
+def test_the_live_store_is_never_switched(monkeypatch, tmp_path):
+    """Each contestant runs in its own throwaway home. Moving a real user's
+    memory sideways to answer a benchmark question is not an acceptable trade."""
+    events = _run(monkeypatch, tmp_path, {"q1?": "alpha", "q2?": "the new one"},
+                  backends=("sqlite", "mem0"))
+    homes = {e["contestant"] for k, e in events if k == "start"}
+    assert homes == {"sqlite", "mem0"}
+    from waku.config import load_settings
+    assert load_settings().semantic_store == "sqlite", "the real config must be untouched"
