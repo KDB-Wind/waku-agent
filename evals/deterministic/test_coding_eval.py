@@ -59,6 +59,23 @@ def test_every_pinned_provider_maps_to_a_pi_provider():
         assert prov in ce.PI_PROVIDER
 
 
+def test_pi_env_overlay_sets_both_names_when_they_differ():
+    """glm's key lives in ZHIPU_API_KEY but pi's zai provider reads ZAI_API_KEY —
+    the overlay must set both, or the delegate fails provider auth."""
+    monkeypatch.delenv("WAKU_DELEGATE_ENV_DENY", raising=False)
+    overlay = ce._pi_env_for("glm", "k")
+    assert overlay == {"ZHIPU_API_KEY": "k", "ZAI_API_KEY": "k"}
+
+
+def test_pi_env_overlay_respects_the_denylist(monkeypatch):
+    """A host that denylisted the exact var wins: the entry is skipped, and pi
+    fails provider auth loudly instead of quietly receiving a denied secret."""
+    monkeypatch.setenv("WAKU_DELEGATE_ENV_DENY", "ZAI_API_KEY")
+    overlay = ce._pi_env_for("glm", "k")
+    assert "ZAI_API_KEY" not in overlay
+    assert overlay["ZHIPU_API_KEY"] == "k"
+
+
 def test_coding_cases_load_and_have_verify():
     cases = ce.load_coding_cases()
     assert len(cases) >= 2

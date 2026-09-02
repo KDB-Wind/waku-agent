@@ -228,8 +228,7 @@ def make_delegate_tool(settings: Settings) -> Tool:
             key = _key_for(settings.provider)
             if key:
                 # The key rides in the environment, never argv (process lists
-                # are readable by anything local) and never --api-key (which
-                # would persist it into pi's own credential store).
+                # are readable by anything local).
                 key_env_overlay = _pi_env_for(settings.provider, key)
         json_mode = _pi_supports_json(pi_bin)
         if json_mode:

@@ -11,8 +11,7 @@ pi natively speaks every provider we pin, so one harness auditions every brain:
     pi --provider <p> --model <m> -p "<task>"
 
 The provider key rides in the environment, never in argv: a process list is
-readable by anything local, and --api-key would also persist the key into pi's
-own credential store.
+readable by anything local.
 
 Waku stays the orchestrator; pi stays the contractor — we just get to compare
 contractors. Coding cases live in `evals/coding.jsonl` (separate from the agentic
@@ -152,12 +151,15 @@ def _key_for(provider: str) -> str:
 def _pi_env_for(provider: str, key: str) -> dict[str, str]:
     """Env overlay that hands pi the model key without putting it in argv.
 
-    argv is readable by anything on the machine (process list), and pi's
-    --api-key would also persist the key into pi's own credential store. The
-    key is re-injected AFTER delegate_env() strips the host's denylist — the
-    delegate needs the model key to run at all — but a host that denylisted
-    the exact var wins: that entry is skipped and pi fails provider auth
-    loudly instead of quietly receiving a denied secret.
+    argv is readable by anything on the machine (process list). The key is
+    re-injected AFTER delegate_env() strips the host's denylist — the delegate
+    needs the model key to run at all — but a host that denylisted the exact
+    var wins: that entry is skipped and pi fails provider auth loudly instead
+    of quietly receiving a denied secret.
+
+    Note pi's resolution order: a credential pi already holds for the provider
+    (e.g. an interactive `pi` login) beats the env fallback — the delegate then
+    runs on that credential rather than this key.
     """
     prov = PROVIDERS.get(provider)
     names = [prov.key_env] if prov else []
