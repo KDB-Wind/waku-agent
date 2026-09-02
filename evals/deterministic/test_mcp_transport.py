@@ -214,11 +214,17 @@ def test_naming_both_credentials_is_refused_not_resolved(capsys):
     bridge.close()
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="os.chmod on Windows only toggles the read-only bit, so the POSIX "
+           "group/other bits are always clear-when-read; the user-profile ACL "
+           "is the real guard there",
+)
 def test_oauth_tokens_are_stored_per_server_and_not_world_readable():
     """The token file is a bearer credential: anything holding it can act as
-    the user until it expires. It is written 0600, under WAKU_HOME, one file
-    per server — a corrupt one should cost a single connection, not all of
-    them."""
+    the user until it expires. It is written 0600 (POSIX), under WAKU_HOME,
+    one file per server — a corrupt one should cost a single connection, not
+    all of them."""
     import asyncio
     import stat
 

@@ -87,7 +87,8 @@ class FileTokenStorage(TokenStorage):
         self._path.parent.mkdir(parents=True, exist_ok=True)
         # Write-then-rename so an interrupted write cannot leave a half file
         # where a valid one was, and chmod before the rename so the secret is
-        # never briefly world-readable.
+        # never briefly world-readable (POSIX; on Windows os.chmod only toggles
+        # the read-only bit and the user-profile ACL is the real guard).
         tmp = self._path.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
         os.chmod(tmp, 0o600)
