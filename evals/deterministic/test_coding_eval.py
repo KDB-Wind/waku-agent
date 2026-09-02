@@ -59,7 +59,7 @@ def test_every_pinned_provider_maps_to_a_pi_provider():
         assert prov in ce.PI_PROVIDER
 
 
-def test_pi_env_overlay_sets_both_names_when_they_differ():
+def test_pi_env_overlay_sets_both_names_when_they_differ(monkeypatch):
     """glm's key lives in ZHIPU_API_KEY but pi's zai provider reads ZAI_API_KEY —
     the overlay must set both, or the delegate fails provider auth."""
     monkeypatch.delenv("WAKU_DELEGATE_ENV_DENY", raising=False)
