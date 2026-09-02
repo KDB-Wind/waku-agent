@@ -155,8 +155,9 @@ make shootout-coding RUNS="kimi:kimi-k3 anthropic:claude-opus-4-8"
 ```
 pi natively speaks every provider we pin (anthropic, openai, google/gemini,
 **moonshotai/kimi**, xai/grok, zai/glm) — the runner maps Waku's provider id to
-pi's and passes the key with `--api-key`, so K3 races the field on identical
-footing. Verified live: opus-4-8 and kimi-k3 both solve `code-fizzbuzz` (scored
+pi's and hands the key over via the provider's standard environment variable
+(never argv, so it stays out of the process list), so K3 races the field on
+identical footing. Verified live: opus-4-8 and kimi-k3 both solve `code-fizzbuzz` (scored
 by real test execution). The scorer lives in
 [`waku/ops/coding_eval.py`](../waku/ops/coding_eval.py).
 

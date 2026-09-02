@@ -141,10 +141,20 @@ def _spawns(path):
 def _passes_delegate_env(call):
     # experimental.py imports it as `delegate_env as _delegate_env`, so match on
     # the suffix rather than pinning one spelling — the alias is not the point.
-    return any(kw.arg == "env"
-               and isinstance(kw.value, ast.Call)
-               and getattr(kw.value.func, "id", "").endswith("delegate_env")
-               for kw in call.keywords)
+    # An overlay ({**delegate_env(), **extra}) counts too: the base copy is
+    # still there, and the overlay only adds the model key the delegate runs on.
+    def _is_delegate_env(node):
+        return (isinstance(node, ast.Call)
+                and getattr(node.func, "id", "").endswith("delegate_env"))
+
+    for kw in call.keywords:
+        if kw.arg != "env":
+            continue
+        if _is_delegate_env(kw.value):
+            return True
+        if isinstance(kw.value, ast.Dict):
+            return any(_is_delegate_env(n) for n in kw.value.values)
+    return False
 
 
 def test_every_delegate_spawn_passes_delegate_env():

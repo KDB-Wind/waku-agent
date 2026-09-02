@@ -8,7 +8,11 @@ is the verdict, SWE-bench style, not a judge's opinion.
 
 pi natively speaks every provider we pin, so one harness auditions every brain:
 
-    pi --provider <p> --model <m> --api-key <k> -p "<task>"
+    pi --provider <p> --model <m> -p "<task>"
+
+The provider key rides in the environment, never in argv: a process list is
+readable by anything local, and --api-key would also persist the key into pi's
+own credential store.
 
 Waku stays the orchestrator; pi stays the contractor — we just get to compare
 contractors. Coding cases live in `evals/coding.jsonl` (separate from the agentic
@@ -27,7 +31,7 @@ import time
 from pathlib import Path
 
 from waku.loop.models import PROVIDERS
-from waku.tools._env import delegate_env
+from waku.tools._env import delegate_env, delegate_env_denylist
 
 _CODING = Path(__file__).resolve().parents[2] / "evals" / "coding.jsonl"
 
@@ -37,6 +41,19 @@ PI_PROVIDER = {
     "kimi": "moonshotai", "xai": "xai", "glm": "zai",
     "deepseek": "deepseek", "minimax": "minimax", "openrouter": "openrouter",
     "opencode_zen": "opencode_zen", "opencode_go": "opencode_go",
+}
+
+# The env var pi's provider reads the key from when --api-key is not passed
+# (pi/packages/ai env-api-keys.ts). The names mostly match Waku's key_env but
+# not always — glm's ZHIPU_API_KEY feeds pi's "zai" provider, which reads
+# ZAI_API_KEY — so both names get set and either pi generation finds the key.
+PI_KEY_ENV = {
+    "anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY",
+    "gemini": "GEMINI_API_KEY", "kimi": "MOONSHOT_API_KEY",
+    "xai": "XAI_API_KEY", "glm": "ZAI_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY", "minimax": "MINIMAX_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+    "opencode_zen": "OPENCODE_API_KEY", "opencode_go": "OPENCODE_API_KEY",
 }
 
 
@@ -90,11 +107,12 @@ def run_coding_stream(provider: str, model: str, task: str, files: dict | None,
     t0 = time.perf_counter()
     try:
         proc = subprocess.Popen(
-            [pi_bin, "--provider", pi_prov, "--model", model, "--api-key", key,
+            [pi_bin, "--provider", pi_prov, "--model", model,
              "-p", task, "-a", "--no-session"],
             cwd=workdir, stdin=subprocess.DEVNULL,   # no TTY under the server: pi
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,  # must not block on stdin
-            text=True, bufsize=1, env=delegate_env())
+            text=True, bufsize=1,
+            env={**delegate_env(), **_pi_env_for(provider, key)})
     except OSError as exc:
         return (False, f"couldn't launch pi: {exc}", round(time.perf_counter() - t0, 1))
 
@@ -131,6 +149,25 @@ def _key_for(provider: str) -> str:
     return os.getenv(prov.key_env, "") if prov else ""
 
 
+def _pi_env_for(provider: str, key: str) -> dict[str, str]:
+    """Env overlay that hands pi the model key without putting it in argv.
+
+    argv is readable by anything on the machine (process list), and pi's
+    --api-key would also persist the key into pi's own credential store. The
+    key is re-injected AFTER delegate_env() strips the host's denylist — the
+    delegate needs the model key to run at all — but a host that denylisted
+    the exact var wins: that entry is skipped and pi fails provider auth
+    loudly instead of quietly receiving a denied secret.
+    """
+    prov = PROVIDERS.get(provider)
+    names = [prov.key_env] if prov else []
+    pi_name = PI_KEY_ENV.get(provider)
+    if pi_name and pi_name not in names:
+        names.append(pi_name)
+    denied = delegate_env_denylist()
+    return {name: key for name in names if name not in denied}
+
+
 def run_coding_case(provider: str, model: str, case: dict,
                     timeout: int = 300) -> tuple[bool, str, float]:
     """Run one coding case on (provider, model) through pi, then score by the
@@ -158,10 +195,11 @@ def run_coding_case(provider: str, model: str, case: dict,
     try:
         # -a trusts project-local files; --no-session keeps the run ephemeral.
         subprocess.run(
-            [pi_bin, "--provider", pi_prov, "--model", model, "--api-key", key,
+            [pi_bin, "--provider", pi_prov, "--model", model,
              "-p", case["input"], "-a", "--no-session"],
             cwd=workdir, stdin=subprocess.DEVNULL, capture_output=True,
-            text=True, timeout=timeout, check=False, env=delegate_env())
+            text=True, timeout=timeout, check=False,
+            env={**delegate_env(), **_pi_env_for(provider, key)})
     except subprocess.TimeoutExpired:
         return (False, f"pi timed out after {timeout}s", round(time.perf_counter() - t0, 1))
     except OSError as exc:

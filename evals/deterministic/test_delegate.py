@@ -72,9 +72,10 @@ def test_delegate_task_invokes_pi_print_mode(tmp_path, monkeypatch):
 
 
 def test_delegate_runs_pi_on_the_calling_model(tmp_path, monkeypatch):
-    """The sub-agent codes with the loop's OWN brain — delegate_task passes this
-    model's provider/model/key to pi, so a per-model race actually compares
-    models (kimi's pi uses kimi, opus's pi uses opus)."""
+    """The sub-agent codes with the loop's OWN brain — delegate_task hands this
+    model's provider/model to pi and the key over via the provider's env var,
+    so a per-model race actually compares models (kimi's pi uses kimi, opus's
+    pi uses opus) without the key ever riding the process list."""
     record = {}
     monkeypatch.setattr(experimental.shutil, "which", lambda _: "/fake/bin/pi")
     monkeypatch.setattr(experimental.subprocess, "run", fake_run(record))
@@ -84,7 +85,9 @@ def test_delegate_runs_pi_on_the_calling_model(tmp_path, monkeypatch):
     argv = record["argv"]
     assert "--provider" in argv and "moonshotai" in argv    # kimi -> pi's moonshotai
     assert "--model" in argv and "kimi-k3" in argv
-    assert "--api-key" in argv
+    assert "--api-key" not in argv                          # argv is world-readable
+    env = record["kwargs"].get("env") or {}
+    assert env.get("MOONSHOT_API_KEY") == "k"               # pi reads the key from env
 
 
 def test_delegate_without_pi_returns_install_hint(tmp_path, monkeypatch):

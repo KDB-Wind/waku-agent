@@ -98,7 +98,7 @@ def _record_subagent_usage(settings: Settings, tin: int, tout: int) -> None:
         f.write(json.dumps(record) + "\n")
 
 
-def _run_pi_json(cmd: list, workdir: Path, timeout: int, notify):
+def _run_pi_json(cmd: list, workdir: Path, timeout: int, notify, env_overlay: dict | None = None):
     """Run pi in --mode json, relaying curated events through `notify` as they
     stream. Returns (returncode, reply_text, stderr, raw_lines, tin, tout,
     cost) — returncode None means we killed it at the deadline.
@@ -108,7 +108,7 @@ def _run_pi_json(cmd: list, workdir: Path, timeout: int, notify):
     can)."""
     proc = subprocess.Popen(cmd, cwd=workdir, stdin=subprocess.DEVNULL,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                            env=_delegate_env())
+                            env={**_delegate_env(), **(env_overlay or {})})
     lines: queue.Queue = queue.Queue()
     stderr_parts: list[str] = []
 
@@ -219,14 +219,18 @@ def make_delegate_tool(settings: Settings) -> Tool:
         # natively speaks every provider we pin; fall back to pi's own default if
         # this provider isn't mappable. -a/--no-session = headless; stdin=DEVNULL
         # so pi never blocks on a TTY it doesn't have under the server.
-        from waku.ops.coding_eval import PI_PROVIDER, _key_for
+        from waku.ops.coding_eval import PI_PROVIDER, _key_for, _pi_env_for
         cmd = [pi_bin]
+        key_env_overlay = {}
         pi_prov = PI_PROVIDER.get(settings.provider)
         if pi_prov and settings.model:
             cmd += ["--provider", pi_prov, "--model", settings.model]
             key = _key_for(settings.provider)
             if key:
-                cmd += ["--api-key", key]
+                # The key rides in the environment, never argv (process lists
+                # are readable by anything local) and never --api-key (which
+                # would persist it into pi's own credential store).
+                key_env_overlay = _pi_env_for(settings.provider, key)
         json_mode = _pi_supports_json(pi_bin)
         if json_mode:
             cmd += ["--mode", "json"]
@@ -238,7 +242,7 @@ def make_delegate_tool(settings: Settings) -> Tool:
         if json_mode:
             try:
                 code, reply, stderr, raw_events, tin, tout, cost = _run_pi_json(
-                    cmd, workdir, timeout, notify)
+                    cmd, workdir, timeout, notify, env_overlay=key_env_overlay)
             except OSError as exc:
                 return f"Couldn't launch pi: {exc}"
             _record_subagent_usage(settings, tin, tout)   # the arena's cost now sees pi
@@ -250,7 +254,7 @@ def make_delegate_tool(settings: Settings) -> Tool:
             try:
                 result = subprocess.run(cmd, cwd=workdir, stdin=subprocess.DEVNULL,
                                         capture_output=True, text=True, timeout=timeout,
-                                        check=False, env=_delegate_env())
+                                        check=False, env={**_delegate_env(), **key_env_overlay})
             except subprocess.TimeoutExpired:
                 return (f"pi was still working after {timeout}s so I stopped it — try a smaller "
                         f"task, or raise WAKU_DELEGATE_TIMEOUT.")
