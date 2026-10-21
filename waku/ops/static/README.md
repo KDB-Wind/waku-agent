@@ -24,8 +24,9 @@ runs the bootstrap and must load last**.
 |------|-----------------|
 | `util.js`    | `esc`, markdown renderer, core globals (`D`, `editing`), `postJSON`, `reveal`, `stampSlots` |
 | `theme.js`   | the system / light / dark toggle (`cycleTheme`), stored as `waku-theme` like the Memory console |
+| `i18n.js`    | English / Simplified Chinese display translation and selector; loads after `locales/zh-CN.js`, before the views; Settings persists `WAKU_UI_LANGUAGE` |
 | `memory.js`  | inline Memory / SOUL / skill editing actions |
-| `models.js`  | `applyModel` (the one `/api/settings` writer), model picker / catalog / pins |
+| `models.js`  | model picker / catalog / pins, provider forms and behaviour toggle saves |
 | `blocks.js`  | a research report's five fenced blocks (`waku-metrics`, `-chart`, `-compare`, `-timeline`, `-sources`) drawn as UI, with no label of their own (the report's heading names them) and a Copy for the raw JSON; `renderMarkdown` calls `reportBlock`, and anything it cannot read stays a code block. The bodies are model output: everything through `esc`, links only to http(s) |
 | `render.js`  | formatters + chat card renderers (`stagesRow`/`teleFooter`, the turn receipt `receiptBlock`/`toggleReceipt`) + chatlog + streaming + `sendChat` |
 | `diagram.js` | `archSVG` (the architecture chart) **and** its live animation (`STAGE`/`hot`/`pollEvents`) |
@@ -65,6 +66,27 @@ Data flows one way: `refresh()` (main.js) fetches `/api/data` into the global
 - **No emojis in UI** (project rule). Known pre-existing exception: the `★`/`☆`
   pin stars in `models.js` (typographic dingbats, not colour emoji) — left as-is.
 
+## Interface languages
+
+`locales/zh-CN.js` keeps English source messages and anchored formatting rules
+separate from rendering. The display adapter changes text nodes and accessible
+labels, including SVG text, without replacing elements or changing graph IDs.
+Unknown messages stay in English. Add entries when introducing or rewording UI
+copy; keep numeric placeholders and identifiers intact.
+
+Mark user-authored content with `data-i18n-skip`. Markdown replies, records,
+code, editable fields and raw outputs must retain their source text. A button
+that temporarily changes its label must capture `WakuI18n.sourceText(button)`
+before changing it, so restoring it also works after a language switch.
+
+The selector saves through the existing `/api/settings` route without rebuilding
+the agent. The browser caches the choice for the initial paint; the saved
+server setting wins on refresh. The embedded chat follows that saved setting
+without adding a control to its compact toolbar. Verify both languages and both
+themes, dynamic updates, SVG navigation, and unchanged user content after editing
+translations. The first-run setup keeps the selector in its page header while
+the navigation rail is hidden.
+
 ## Design system
 
 How the dashboard looks, the token rules and the `js/ui.js` primitives are in
@@ -73,7 +95,8 @@ before changing how anything looks.
 
 ## Verifying a change (no JS test runner exists)
 
-Frontend logic is not unit-tested; verify in the browser preview:
+The language catalog and small display fixtures have offline Node checks in
+`evals/deterministic/test_ui_language.py`. Verify the full interface in a browser:
 `make dashboard` (or the preview tool) → hard-reload `localhost:7777` → click the
 sidebar tabs and the chat dock → check the console shows **zero errors**. The
 Python side (`dashboard.py` endpoints, `_thread_history`, pins, session resume)

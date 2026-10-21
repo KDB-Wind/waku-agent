@@ -267,6 +267,7 @@ NETWORK_CALLERS = {
     # the header's "Dashboard" button: one click, one sign-in hand-off code
     ("embed.js", "openDashboard"): "user",
     ("graph.js", "runGraph"): "user",
+    ("i18n.js", "change"): "user",
     ("judgment.js", "loadJudgmentArena"): "background",
     ("judgment.js", "runJudgmentArena"): "user",
     ("main.js", "refresh"): "background",

@@ -530,7 +530,7 @@ function setProviderModalBusy(activeId, busy){
   ["pm-save", "pm-make-current"].forEach(id => {
     const button = document.getElementById(id);
     if (!button) return;
-    if (!button.dataset.label) button.dataset.label = button.textContent;
+    if (!button.dataset.label) button.dataset.label = WakuI18n.sourceText(button);
     button.disabled = busy;
     button.textContent = busy && id === activeId
       ? (id === "pm-make-current" ? "Switching…" : "Saving…")

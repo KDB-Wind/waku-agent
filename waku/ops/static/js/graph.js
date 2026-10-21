@@ -322,6 +322,6 @@ function graphRunPanel(){
   });
   if (R.totalMs) h += `<div class="meta" style="margin-top:var(--space-3)">finished in
     ${(R.totalMs/1000).toFixed(1)}s${R.draft ? ` · saved to <code>${esc(R.draft)}</code>` : ""}</div>`;
-  if (R.digest) h += `<div style="margin-top:var(--space-2)">${uiCard(renderMarkdown(R.digest))}</div>`;
+  if (R.digest) h += `<div style="margin-top:var(--space-2)" data-i18n-skip>${uiCard(renderMarkdown(R.digest))}</div>`;
   return title + uiCard(h);
 }

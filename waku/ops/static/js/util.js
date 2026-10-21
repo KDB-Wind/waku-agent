@@ -85,7 +85,7 @@ function renderMarkdown(text){
 function copyCode(btn){
   const code = btn.closest(".mdcode").querySelector("pre code");
   navigator.clipboard.writeText(code.textContent).then(() => {
-    const orig = btn.textContent;
+    const orig = WakuI18n.sourceText(btn);
     btn.textContent = "Copied!"; btn.classList.add("copied");
     setTimeout(() => { btn.textContent = orig; btn.classList.remove("copied"); }, 2000);
   });
@@ -93,7 +93,7 @@ function copyCode(btn){
 function copyMsg(btn){
   const text = btn.getAttribute("data-text") || "";
   navigator.clipboard.writeText(text).then(() => {
-    const orig = btn.textContent;
+    const orig = WakuI18n.sourceText(btn);
     btn.textContent = "Copied!"; btn.classList.add("copied");
     setTimeout(() => { btn.textContent = orig; btn.classList.remove("copied"); }, 2000);
   });

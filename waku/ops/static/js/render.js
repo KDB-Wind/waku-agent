@@ -48,7 +48,7 @@ const toolRow = x => {
   const cost = toolCost(x), summary = toolSummary(x);
   return `<div class="tool ${x.status||"ok"}">
   <div class="tool-head"><span class="dot ${x.status||"ok"}"></span><code>${esc(x.tool)}</code>
-    ${summary?`<span style="color:var(--text-muted)">${esc(summary)}</span>`:""}
+    ${summary?`<span data-i18n-skip style="color:var(--text-muted)">${esc(summary)}</span>`:""}
     ${cost?`<span class="tool-cost">${money(cost.usd)}${cost.provider?` · ${esc(cost.provider)}`:""}</span>`:""}</div>
   ${x.output!==undefined?`<details><summary>args &amp; raw output</summary>
     <pre>${esc(x.tool)}(${esc(JSON.stringify(x.args,null,1))})\n\n${esc(x.output)}</pre>
@@ -81,10 +81,10 @@ function histItem(m){
 }
 
 const turnCard = t => uiCard(`
-  <div class="u">${esc(t.user_message)}</div>
+  <div class="u" data-i18n-skip>${esc(t.user_message)}</div>
   <div class="meta" style="margin-top:var(--spacing)">${gateBadge(t.gate)}</div>
   ${(t.tools||[]).map(toolRow).join("")}
-  <div class="r">${renderMarkdown(t.reply)}</div>
+  <div class="r" data-i18n-skip>${renderMarkdown(t.reply)}</div>
   <div class="meta">${esc((t.ts||"").replace("T"," ").slice(0,19))} · ${secs(t.latency_ms)} · ${t.iterations??"?"} iter · ${money(t.cost||0)}${t.consolidation?` · consolidated ${t.consolidation.new_facts} fact(s)`:""}</div>`);
 
 // The reply's copy button. It sits inside the card, and CSS shows it only
@@ -330,7 +330,7 @@ const chatTurnCard = t => uiCard(`
   ${t.slot?`<div class="meta tele" style="margin:0 0 calc(var(--spacing) * 1.5)">Jev kept ${esc(String(t.slot.kept))} of ${esc(String(t.slot.total))} memories</div>`:""}
   ${nodesRow(t)}
   ${(t.tools||[]).length?`<div class="tele">${(t.tools||[]).map(toolRow).join("")}</div>`:""}
-  <div class="r" style="margin-top:var(--space-2)">${renderMarkdown(t.reply)}</div>
+  <div class="r" data-i18n-skip style="margin-top:var(--space-2)">${renderMarkdown(t.reply)}</div>
   ${reportCard(t.report)}
   ${usedList(t.used)}
   ${keptList(t.consolidation)}
@@ -359,7 +359,7 @@ const streamingCard = m => uiCard(`
   ${(m.tools||[]).map(toolRow).join("")}
   ${reportCard(m.report)}
   ${m.stream
-     ? `<div class="r" style="margin-top:var(--space-2)">${renderMarkdown(m.stream)}<span class="caret"></span></div>`
+     ? `<div class="r" data-i18n-skip style="margin-top:var(--space-2)">${renderMarkdown(m.stream)}<span class="caret"></span></div>`
      : `<div class="meta" style="margin:0">thinking&hellip;${m.started?` ${Math.round((Date.now()-m.started)/1000)}s`:""}${
          m.started && Date.now()-m.started > 20000
          ? `<br>still waiting: slow models (free tiers especially) can queue for a while; this errors out at the WAKU_LLM_TIMEOUT limit instead of hanging forever`
@@ -369,7 +369,7 @@ const streamingCard = m => uiCard(`
 // latency/iteration data.
 const historicalCard = m => uiCard(`
   ${msgCopy(m.reply)}
-  <div class="r">${renderMarkdown(m.reply)}</div>`, {cls: "reply"});
+  <div class="r" data-i18n-skip>${renderMarkdown(m.reply)}</div>`, {cls: "reply"});
 
 function renderChatLog(){
   if (!CHAT.length)
@@ -378,7 +378,7 @@ function renderChatLog(){
       ? "Message Waku here. Every tool call and reply shows as it runs."
       : "Message Waku here from any tab. Open Overview to watch it flow through the harness, or the Gateway tab to see every channel's messages together."}</div>`;
   return CHAT.map(m => m.role==="user"
-      ? `<div class="bubble">${esc(m.text)}</div>`
+      ? `<div class="bubble" data-i18n-skip>${esc(m.text)}</div>`
       : m.pending ? streamingCard(m)
       : m.historical ? historicalCard(m)
       : chatTurnCard(m)).join("");

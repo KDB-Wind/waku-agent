@@ -284,6 +284,13 @@ class Settings:
         default_factory=lambda: os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
     )
 
+    # Append new fields to preserve positional arguments used by older callers.
+    # Dashboard language is independent of the assistant's SOUL.md preferences.
+    ui_language: str = field(default_factory=lambda: (
+        os.getenv("WAKU_UI_LANGUAGE", "en")
+        if os.getenv("WAKU_UI_LANGUAGE", "en") in ("en", "zh-CN") else "en"
+    ))
+
     def ensure_home(self) -> Path:
         self.home.mkdir(parents=True, exist_ok=True)
         (self.home / "traces").mkdir(exist_ok=True)

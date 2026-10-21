@@ -14,10 +14,10 @@ function subtabBar(view, tabs, active){
 // so the schema lines up over its data instead of floating above it.
 function dbTable(t){
   if (!t.sample.length) return uiCard(`<span class="empty">empty — no rows yet</span>`);
-  const cols = t.columns.map(c => `${esc(c)}${
+  const cols = t.columns.map(c => `<span data-i18n-skip>${esc(c)}</span>${
     t.types&&t.types[c]?`<small>${esc(t.types[c].toLowerCase())}</small>`:""}`);
   const rows = t.sample.map(r => t.columns.map(c =>
-    `<span class="dbcell">${esc(String(r[c]??"").slice(0,120))}</span>`));
+    `<span class="dbcell" data-i18n-skip>${esc(String(r[c]??"").slice(0,120))}</span>`));
   return `<div class="scrolly">${uiTable(cols, rows)}</div>
     <div class="meta" style="margin-top:calc(var(--spacing) * 1.5)">showing ${t.sample.length} of ${t.count} row${t.count===1?"":"s"} (newest first)</div>`;
 }
@@ -52,7 +52,7 @@ async function runQuery(){
   const r = await postJSON("/api/query", {sql});
   if (r.error){ out.innerHTML = uiCard(`<span class="empty" style="color:var(--bad)">${esc(r.error)}</span>`); return; }
   if (!r.rows.length){ out.innerHTML = uiCard(`<span class="empty">0 rows</span>`); return; }
-  out.innerHTML = `<div class="scrolly">${uiTable(r.columns.map(esc),
+  out.innerHTML = `<div class="scrolly">${uiTable(r.columns.map(c => `<span data-i18n-skip>${esc(c)}</span>`),
     r.rows.map(row => row.map(v => `<span class="dbcell">${esc(String(v).slice(0,120))}</span>`)))}</div>
     <div class="meta" style="margin-top:calc(var(--spacing) * 1.5)">${r.rows.length} row(s)</div>`;
 }
@@ -123,7 +123,7 @@ description: ${sk.description}
 
 ${sk.body}`;
     return uiCard(`
-      <div class="u"><code>${esc(sk.name)}</code> <span class="meta" style="font-weight:400">· ${esc(sk.description)}</span>
+      <div class="u"><code>${esc(sk.name)}</code> <span class="meta" data-i18n-skip style="font-weight:400">· ${esc(sk.description)}</span>
         <span style="margin-left:calc(var(--spacing) * 1.5)">${uiBadge(sk.editable?"home":"built-in")}</span></div>
       <textarea class="editor" id="sk-${i}" style="min-height:150px;margin-top:var(--space-2)" data-path="${esc(sk.path)}"
         oninput="dirty('sksave-${i}')" onfocus="markEditing()">${esc(full)}</textarea>
@@ -525,10 +525,10 @@ const VIEWS = {
     h += `<h2>Graph turns</h2>`;
     h += gturns.length
       ? gturns.slice(0,20).map(t => uiCard(`
-          <div class="u">${esc(t.user_message)}</div>
+          <div class="u" data-i18n-skip>${esc(t.user_message)}</div>
           <div class="meta" style="margin-top:var(--spacing)">${uiBadge(`graph · ${esc(t.graph.route)}`, t.graph.route==="quick" ? "neutral" : "value")}
             <span class="meta" style="margin:0">${esc(t.graph.reason||"")}</span></div>
-          <div class="r">${renderMarkdown(t.reply||"")}</div>`)).join("")
+          <div class="r" data-i18n-skip>${renderMarkdown(t.reply||"")}</div>`)).join("")
       : uiCard(`<span class="empty">no graph turns yet — ${g.enabled
           ? 'say "thanks!" in the chat and watch it take the quick door'
           : "switch the flag on first"}</span>`);

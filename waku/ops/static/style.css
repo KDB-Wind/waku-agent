@@ -1,4 +1,10 @@
   *{box-sizing:border-box;margin:0}
+  .ui-language-control{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2);
+    padding:var(--space-2);font-size:var(--text-xs);color:var(--text-muted)}
+  .ui-language-control select{min-width:0;max-width:100%;font-size:var(--text-xs)}
+  #ui-language-note{color:var(--bad)}
+  .rail.collapsed .ui-language-control > span{display:none}
+  :lang(zh-CN) :is(h1,h2,h3,.r-grp,.stat-label,.badge-t){letter-spacing:normal}
   /* the browser makes these 700 by default; the system has only 400 and 500 */
   b,strong,h2,h3,h4,th{font-weight:var(--font-weight-medium)}
   /* native checkboxes and radios take the accent, not the OS blue */

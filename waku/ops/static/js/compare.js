@@ -287,8 +287,8 @@ function replyBlock(res){
   // height comes from LINES, not characters — 20 short code lines are taller
   // than a 400-char paragraph
   const long = r.length > 400 || (r.match(/\n/g)||[]).length > 8;
-  if (!long) return `<div class="r cmp-reply">${renderMarkdown(res.reply||"")}</div>`;
-  return `<div class="r cmp-reply ${res.replyOpen?"":"clamped"}">${renderMarkdown(res.reply||"")}</div>
+  if (!long) return `<div class="r cmp-reply" data-i18n-skip>${renderMarkdown(res.reply||"")}</div>`;
+  return `<div class="r cmp-reply ${res.replyOpen?"":"clamped"}" data-i18n-skip>${renderMarkdown(res.reply||"")}</div>
     ${uiButton(res.replyOpen?"show less":"show full reply", {level: "tertiary", size: "sm", cls: "cmp-more",
       onclick: `const r=compareState.results['${esc(res.spec)}']; if(r){r.replyOpen=!r.replyOpen; render();}`})}`;
 }

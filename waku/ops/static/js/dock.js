@@ -91,7 +91,7 @@ function toggleSessMenu(ev){
     {sub: "full timeline", on: liveView === "__all__", onclick: "viewAllHistory()",
      title: "every thread together, newest last"});
   const rows = sessions.length
-    ? sessions.map(s => uiMenuItem(`${esc(s.title||s.id)} ${gwTags(s)}`,
+    ? sessions.map(s => uiMenuItem(`<span data-i18n-skip>${esc(s.title||s.id)}</span> ${gwTags(s)}`,
         {sub: sessionMeta(s), on: s.id === SESSION, onclick: `openConversation('${esc(s.id)}')`})).join("")
     : `<div class="menu-empty">no past conversations yet</div>`;
   openMenu(ev.currentTarget, allItem + uiMenuSep() + rows, {width: "400px"});

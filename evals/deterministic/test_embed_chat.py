@@ -133,8 +133,8 @@ def test_choosing_a_more_menu_item_closes_it_then_runs_the_old_button_function()
 
 
 def test_the_page_loads_the_chat_scripts_and_no_view():
-    scripts = re.findall(r'<script src="/static/js/([a-z]+\.js)"></script>', EMBED)
-    assert scripts == ["util.js", "theme.js", "ui.js", "blocks.js", "render.js", "dock.js", "embed.js"]
+    scripts = re.findall(r'<script src="/static/js/([a-z0-9]+\.js)"></script>', EMBED)
+    assert scripts == ["util.js", "theme.js", "ui.js", "i18n.js", "blocks.js", "render.js", "dock.js", "embed.js"]
     assert not re.search(r"<script>", EMBED), "no inline script: the page runs only its files"
     for ref in re.findall(r'(?:src|href)="(/static/[^"]+)"', EMBED):
         assert (STATIC / ref[len("/static/"):]).is_file(), ref
@@ -185,16 +185,18 @@ def test_localhost_serves_the_embed_page(server):
     assert b'data-embed-origins="https://dev.waku.one"' in told
 
 
-def test_the_header_state_is_the_chats_and_no_more(server):
+def test_the_header_state_is_the_chats_and_no_more(server, monkeypatch):
     """The embed reads this instead of /api/data, which an embed session is
     refused: the conversations, the current one, the model and the pins."""
+    monkeypatch.setenv("WAKU_UI_LANGUAGE", "zh-CN")
     _, body = _get(server + "/api/session?action=state")
     state = json.loads(body)
     assert set(state) == {"ok", "sessions", "current_session", "settings"}
     assert state["current_session"] == "s-20261003-091500"
     assert [s["id"] for s in state["sessions"]] == ["s-20261003-091500"]
     assert set(state["settings"]) == {"provider", "model", "small_model", "pinned",
-                                      "disabled_providers"}
+                                      "disabled_providers", "ui_language"}
+    assert state["settings"]["ui_language"] == "zh-CN"
 
 
 # --- B and F, run in node ----------------------------------------------------------

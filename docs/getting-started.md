@@ -67,6 +67,14 @@ Telegram bot too.
 **Check:** send a message from the chat dock and watch the Overview diagram
 light up as it flows through the harness.
 
+The sidebar's **Language** selector switches the interface between English
+and Simplified Chinese, including the diagrams. It saves `WAKU_UI_LANGUAGE`
+(`en` or `zh-CN`) in the same local `.env` used by Settings, so restarting or
+updating Waku keeps your choice. This controls the interface only; `SOUL.md`
+and your messages control the assistant's reply language. New copy without a
+translation stays in English, and records, code and raw tool outputs stay
+in their original language.
+
 ## 4. Watch it remember
 
 Say *"Remember that Alex prefers morning meetings."* Quit, and restart. Then

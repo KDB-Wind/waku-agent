@@ -1,8 +1,8 @@
 """The small Settings surface left after Connections owns integrations.
 
 Provider credentials, models, memory backends, search and gateways are managed
-by :mod:`waku.integrations`. This module retains the Experimental and
-Graph-workflows toggles and the model pin action; catalog remains the sole
+by :mod:`waku.integrations`. This module retains display language, the Experimental
+and Graph-workflows toggles and the model pin action; catalog remains the sole
 owner of pin persistence.
 """
 
@@ -71,6 +71,7 @@ def settings_info() -> dict:
     # custom key must not read back as if it belonged to this row.
     scoped = bool(prov and prov.scoped_credentials)
     return {
+        "ui_language": s.ui_language,
         "provider": s.provider,
         "model": model,
         "small_model": small_model,
@@ -100,8 +101,7 @@ def settings_info() -> dict:
 
 
 def apply_settings(payload: dict) -> dict:
-    """Save the remaining Settings concerns: the experimental and graph-workflows
-    toggles.
+    """Save display language and the experimental and graph-workflows toggles.
 
     Connection fields and provider changes deliberately live in integrations.
     """
@@ -113,7 +113,13 @@ def apply_settings(payload: dict) -> dict:
 
     if "episodic_store" in payload:
         return {"error": "episodic_store is managed in Connections"}
+    language = payload.get("ui_language")
+    if "ui_language" in payload and language not in ("en", "zh-CN"):
+        return {"error": "ui_language must be en or zh-CN"}
     env_path = str(env_write_path())
+    if language is not None:
+        set_key(env_path, "WAKU_UI_LANGUAGE", language)
+        os.environ["WAKU_UI_LANGUAGE"] = language
     # NOT `if toggle:` — turning it OFF sends "", which is falsy. Absent (None)
     # means "don't touch"; "" means "switch it off".
     toggles = (("experimental", "WAKU_EXPERIMENTAL"), ("graph_workflows", "WAKU_GRAPH_WORKFLOWS"))

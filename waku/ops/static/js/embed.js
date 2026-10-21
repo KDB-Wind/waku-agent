@@ -26,6 +26,7 @@ async function refresh(){
     const st = await res.json();
     D = {sessions: st.sessions || [], settings: st.settings || {},
          current_session: st.current_session};
+    WakuI18n.sync(D.settings.ui_language);
     syncModelChip();
     applyTele();
   } catch(e){ /* the container is waking or gone: keep what is shown */ }

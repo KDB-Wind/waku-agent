@@ -48,12 +48,14 @@ function render(){
   // There is no "I set a key" state to get wrong.
   if (needsSetup(D)){
     document.body.classList.add("first-run");
+    WakuI18n.placeSelector(true);
     document.getElementById("title").textContent = "Set up Waku";
     document.getElementById("view").innerHTML = VIEWS.setup(D);
     activeView = "setup"; activeSub = null;
     return;
   }
   document.body.classList.remove("first-run");
+  WakuI18n.placeSelector(false);
   const view = VIEWS[v] ? v : "overview";
   const subChanged = sub !== activeSub || view !== activeView;
   // Two nav rows can share a view, so a row that names a sub only lights up
@@ -176,6 +178,7 @@ async function refresh(background = false){
     const res = await fetch("/api/data", background ? {headers: BG} : undefined);
     if (!res.ok){ await handleNotOk(res); return; }
     D = await res.json(); lastFetch = Date.now();
+    WakuI18n.sync(D.settings && D.settings.ui_language);
     resumeLive();   // a real reply: whatever paused us is over
     render(); tickLive();
     syncModelChip();  // keep the dock's model pill in sync with the active brain
